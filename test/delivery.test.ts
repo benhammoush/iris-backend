@@ -118,3 +118,26 @@ test('Worker targets retain local isolation and production-only hourly Cron', ()
     assert.doesNotMatch(section, /remote\s*=\s*true/);
   }
 });
+
+test('hosted Workers bind distinct new namespaces with explicit workers.dev routes', () => {
+  const namespaces = new Set<string>();
+  const retiredNamespaces = new Set([
+    '837c0562b3844757b252f0324dc70b74',
+    'd9cc2796e2954a498851b3ad5ecefd59',
+    '8409635b839c49558d1b6e9bdeaf0f03',
+  ]);
+  for (const target of ['dev', 'production']) {
+    const worker = configuration.split(`[env.${target}]`)[1]?.split(/^\[/m)[0];
+    assert.ok(worker?.includes(`name = "iris-backend-${target}"`));
+    assert.match(worker, /workers_dev = true/);
+    const binding = configuration
+      .split(`[[env.${target}.kv_namespaces]]`)[1]
+      ?.split(/^\[/m)[0];
+    const id = binding?.match(/^id = "([0-9a-f]{32})"/m)?.[1];
+    assert.ok(id, `Missing ${target} namespace`);
+    assert.notEqual(id, '00000000000000000000000000000000');
+    assert.equal(retiredNamespaces.has(id), false);
+    namespaces.add(id);
+  }
+  assert.equal(namespaces.size, 2);
+});

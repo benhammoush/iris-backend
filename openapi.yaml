@@ -12,7 +12,7 @@ info:
     as deprecated compatibility surfaces.
 security: []
 servers:
-  - url: https://iris-backend-production.example.invalid
+  - url: https://iris-backend-production.benhxm.workers.dev
     description: Production Cloudflare Worker
 tags:
   - name: Operations
