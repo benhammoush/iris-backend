@@ -1,0 +1,1773 @@
+openapi: 3.1.0
+info:
+  title: Iris API
+  version: 3.15.7
+  license:
+    name: ISC
+    identifier: ISC
+    url: https://spdx.org/licenses/ISC.html
+  description: |
+    Iris provides cached Solana market data and on-demand public-wallet lookups.
+    `/v3` is the canonical public contract. `/v1` and `/v2` remain available only
+    as deprecated compatibility surfaces.
+security: []
+servers:
+  - url: https://iris-backend-production.example.invalid
+    description: Production Cloudflare Worker
+tags:
+  - name: Operations
+    description: Worker availability and readiness.
+  - name: Status
+    description: Solana snapshot provenance and network state.
+  - name: Market
+    description: Snapshot-backed market and protocol data.
+  - name: Assets
+    description: Canonical Solana asset lookup and intelligence.
+  - name: Wallets
+    description: Public Solana wallet balances and activity.
+  - name: Transactions
+    description: Sampled and paginated transaction data.
+  - name: Internal
+    description: Operator-only refresh operation.
+  - name: Legacy v1
+    description: Deprecated compatibility surface; use v3 instead.
+  - name: Legacy v2
+    description: Deprecated compatibility surface; use v3 instead.
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Operations]
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+  /ready:
+    get:
+      operationId: getReadiness
+      tags: [Operations]
+      responses:
+        '200': { $ref: '#/components/responses/Ready' }
+        '503': { $ref: '#/components/responses/NotReady' }
+  /internal/refresh:
+    post:
+      operationId: refreshSnapshot
+      tags: [Internal]
+      security: [{ refreshToken: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/RefreshCompleted' }
+        '401': { $ref: '#/components/responses/RefreshUnauthorized' }
+        '502': { $ref: '#/components/responses/RefreshFailed' }
+  /v3/status:
+    get:
+      operationId: getV3Status
+      tags: [Status]
+      responses:
+        '200': { $ref: '#/components/responses/Status' }
+  /v3/network:
+    get:
+      operationId: getV3Network
+      tags: [Status]
+      responses:
+        '200': { $ref: '#/components/responses/Network' }
+  /v3/assets:
+    get:
+      operationId: listV3Assets
+      tags: [Assets]
+      responses:
+        '200': { $ref: '#/components/responses/AssetList' }
+  /v3/catalogs:
+    get:
+      operationId: getV3Catalogs
+      tags: [Market]
+      responses:
+        '200': { $ref: '#/components/responses/Catalogs' }
+  /v3/defillama:
+    get:
+      operationId: getV3DefiLlamaDashboard
+      tags: [Market]
+      responses:
+        '200': { $ref: '#/components/responses/DefiLlama' }
+  /v3/swaps:
+    get:
+      operationId: listV3Swaps
+      tags: [Market]
+      responses:
+        '200': { $ref: '#/components/responses/Swaps' }
+  /v3/transactions/recent:
+    get:
+      operationId: listV3RecentTransactions
+      tags: [Transactions]
+      parameters: [{ $ref: '#/components/parameters/RecentTransactionLimit' }]
+      responses:
+        '200': { $ref: '#/components/responses/RecentTransactions' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+  /v3/assets/mint/{mint}:
+    get:
+      operationId: getV3AssetByMint
+      tags: [Assets]
+      parameters:
+        - { $ref: '#/components/parameters/Mint' }
+        - { $ref: '#/components/parameters/IncludeHistory' }
+        - { $ref: '#/components/parameters/HistoryRange' }
+      responses:
+        '200': { $ref: '#/components/responses/AssetDetail' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/assets/mint/{mint}/history:
+    get:
+      operationId: getV3AssetHistory
+      tags: [Assets]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Mint' },
+          { $ref: '#/components/parameters/HistoryRange' },
+        ]
+      responses:
+        '200': { $ref: '#/components/responses/History' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/assets/mint/{mint}/candles:
+    get:
+      operationId: getV3AssetCandles
+      tags: [Assets]
+      parameters:
+        - { $ref: '#/components/parameters/Mint' }
+        - { $ref: '#/components/parameters/CandleTimeframe' }
+        - { $ref: '#/components/parameters/CandleBefore' }
+      responses:
+        '200': { $ref: '#/components/responses/Candles' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/assets/mint/{mint}/onchain:
+    get:
+      operationId: getV3AssetOnchain
+      tags: [Assets]
+      parameters: [{ $ref: '#/components/parameters/Mint' }]
+      responses:
+        '200': { $ref: '#/components/responses/OnchainAsset' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/assets/mint/{mint}/holders:
+    get:
+      operationId: getV3AssetHolders
+      tags: [Assets]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Mint' },
+          { $ref: '#/components/parameters/HolderPage' },
+        ]
+      responses:
+        '200': { $ref: '#/components/responses/Holders' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/assets/mint/{mint}/distribution:
+    get:
+      operationId: getV3AssetDistribution
+      tags: [Assets]
+      parameters: [{ $ref: '#/components/parameters/Mint' }]
+      responses:
+        '200': { $ref: '#/components/responses/Distribution' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/assets/mint/{mint}/transactions:
+    get:
+      operationId: getV3AssetTransactions
+      tags: [Assets, Transactions]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Mint' },
+          { $ref: '#/components/parameters/TransactionLimit' },
+          { $ref: '#/components/parameters/Cursor' },
+        ]
+      responses:
+        '200': { $ref: '#/components/responses/AssetTransactions' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/wallets/{address}:
+    get:
+      operationId: getV3Wallet
+      tags: [Wallets]
+      parameters: [{ $ref: '#/components/parameters/WalletAddress' }]
+      responses:
+        '200': { $ref: '#/components/responses/Wallet' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/wallets/{address}/transactions:
+    get:
+      operationId: getV3WalletTransactions
+      tags: [Wallets, Transactions]
+      parameters:
+        [
+          { $ref: '#/components/parameters/WalletAddress' },
+          { $ref: '#/components/parameters/TransactionLimit' },
+          { $ref: '#/components/parameters/Cursor' },
+        ]
+      responses:
+        '200': { $ref: '#/components/responses/Transactions' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v3/wallets/{address}/events:
+    get:
+      operationId: getV3WalletEvents
+      tags: [Wallets, Transactions]
+      deprecated: true
+      description: Compatibility alias for `/v3/wallets/{address}/transactions`.
+      parameters:
+        [
+          { $ref: '#/components/parameters/WalletAddress' },
+          { $ref: '#/components/parameters/TransactionLimit' },
+          { $ref: '#/components/parameters/Cursor' },
+        ]
+      responses:
+        '200': { $ref: '#/components/responses/Transactions' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '503': { $ref: '#/components/responses/ProviderUnavailable' }
+  /v1/status:
+    {
+      get:
+        {
+          operationId: getV1Status,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v1/market:
+    {
+      get:
+        {
+          operationId: getV1Market,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v1/assets:
+    {
+      get:
+        {
+          operationId: listV1Assets,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v1/assets/mint/{mint}:
+    {
+      get:
+        {
+          operationId: getV1AssetByMint,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/Mint' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '404': { $ref: '#/components/responses/NotFound' },
+            },
+        },
+    }
+  /v1/assets/id/{id}:
+    {
+      get:
+        {
+          operationId: getV1AssetById,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/LegacyAssetId' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '404': { $ref: '#/components/responses/NotFound' },
+            },
+        },
+    }
+  /v1/assets/{symbol}:
+    {
+      get:
+        {
+          operationId: getV1AssetBySymbol,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/Symbol' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '404': { $ref: '#/components/responses/NotFound' },
+              '409': { $ref: '#/components/responses/Conflict' },
+            },
+        },
+    }
+  /v1/swaps:
+    {
+      get:
+        {
+          operationId: listV1Swaps,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v1/wallets:
+    {
+      get:
+        {
+          operationId: listV1Wallets,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v1/wallets/{address}:
+    {
+      get:
+        {
+          operationId: getV1Wallet,
+          tags: ['Legacy v1'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/WalletAddress' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '400': { $ref: '#/components/responses/InvalidRequest' },
+              '503': { $ref: '#/components/responses/ProviderUnavailable' },
+            },
+        },
+    }
+  /v2/status:
+    {
+      get:
+        {
+          operationId: getV2Status,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v2/market:
+    {
+      get:
+        {
+          operationId: getV2Market,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v2/assets:
+    {
+      get:
+        {
+          operationId: listV2Assets,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          description: Returns up to 250 snapshot assets,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v2/assets/mint/{mint}:
+    {
+      get:
+        {
+          operationId: getV2AssetByMint,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/Mint' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '404': { $ref: '#/components/responses/NotFound' },
+            },
+        },
+    }
+  /v2/assets/id/{id}:
+    {
+      get:
+        {
+          operationId: getV2AssetById,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/LegacyAssetId' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '404': { $ref: '#/components/responses/NotFound' },
+            },
+        },
+    }
+  /v2/assets/{symbol}:
+    {
+      get:
+        {
+          operationId: getV2AssetBySymbol,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/Symbol' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '404': { $ref: '#/components/responses/NotFound' },
+              '409': { $ref: '#/components/responses/Conflict' },
+            },
+        },
+    }
+  /v2/swaps:
+    {
+      get:
+        {
+          operationId: listV2Swaps,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v2/wallets:
+    {
+      get:
+        {
+          operationId: listV2Wallets,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          responses: { '200': { $ref: '#/components/responses/Envelope' } },
+        },
+    }
+  /v2/wallets/{address}:
+    {
+      get:
+        {
+          operationId: getV2Wallet,
+          tags: ['Legacy v2'],
+          deprecated: true,
+          parameters: [{ $ref: '#/components/parameters/WalletAddress' }],
+          responses:
+            {
+              '200': { $ref: '#/components/responses/Envelope' },
+              '400': { $ref: '#/components/responses/InvalidRequest' },
+              '503': { $ref: '#/components/responses/ProviderUnavailable' },
+            },
+        },
+    }
+components:
+  parameters:
+    Mint:
+      {
+        in: path,
+        name: mint,
+        required: true,
+        schema: { type: string },
+        description: Canonical Solana mint address.,
+      }
+    LegacyAssetId:
+      {
+        in: path,
+        name: id,
+        required: true,
+        schema: { type: string },
+        description: Deprecated alias for a canonical mint address.,
+      }
+    Symbol:
+      {
+        in: path,
+        name: symbol,
+        required: true,
+        schema: { type: string },
+        description: Deprecated symbol lookup; symbols can be ambiguous.,
+      }
+    WalletAddress:
+      {
+        in: path,
+        name: address,
+        required: true,
+        schema: { type: string },
+        description: Public Solana wallet address.,
+      }
+    IncludeHistory:
+      {
+        in: query,
+        name: includeHistory,
+        schema: { type: boolean, default: true },
+        description: Set false to omit compatibility history from asset detail.,
+      }
+    HistoryRange:
+      {
+        in: query,
+        name: range,
+        schema: { type: string, enum: [1d, 7d], default: 7d },
+      }
+    CandleTimeframe:
+      {
+        in: query,
+        name: timeframe,
+        description: Exact-case native Birdeye duration.,
+        schema:
+          {
+            type: string,
+            enum:
+              [
+                1s,
+                15s,
+                30s,
+                1m,
+                3m,
+                5m,
+                15m,
+                30m,
+                1H,
+                2H,
+                4H,
+                6H,
+                8H,
+                12H,
+                1D,
+                3D,
+                1W,
+                1M,
+              ],
+            default: 1H,
+          },
+      }
+    CandleBefore:
+      {
+        in: query,
+        name: before,
+        description: Exclusive-end Unix timestamp in seconds.,
+        schema: { type: integer, minimum: 1 },
+      }
+    HolderPage:
+      {
+        in: query,
+        name: page,
+        schema: { type: integer, minimum: 1, default: 1 },
+      }
+    TransactionLimit:
+      {
+        in: query,
+        name: limit,
+        schema: { type: integer, minimum: 1, maximum: 100, default: 25 },
+      }
+    RecentTransactionLimit:
+      {
+        in: query,
+        name: limit,
+        schema: { type: integer, minimum: 10, maximum: 20, default: 15 },
+      }
+    Cursor:
+      {
+        in: query,
+        name: cursor,
+        schema: { type: string, minLength: 1 },
+        description: Opaque provider pagination token.,
+      }
+  headers:
+    RequestId:
+      { description: Request correlation identifier., schema: { type: string } }
+    CacheControl:
+      { description: Route-specific cache policy., schema: { type: string } }
+  responses:
+    Envelope:
+      description: Successful JSON envelope.
+      headers:
+        {
+          X-Request-Id: { $ref: '#/components/headers/RequestId' },
+          Cache-Control: { $ref: '#/components/headers/CacheControl' },
+        }
+      content:
+        {
+          application/json:
+            { schema: { $ref: '#/components/schemas/Envelope' } },
+        }
+    Health:
+      {
+        description: Worker is running.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/HealthEnvelope' } },
+          },
+      }
+    Ready:
+      {
+        description: A usable resolved snapshot is available.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ReadyEnvelope' } },
+          },
+      }
+    NotReady:
+      {
+        description: Snapshot KV binding or resolved data is unavailable.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ErrorEnvelope' } },
+          },
+      }
+    RefreshCompleted:
+      {
+        description: Snapshot refresh completed.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/RefreshEnvelope' } },
+          },
+      }
+    RefreshUnauthorized:
+      {
+        description: REFRESH_UNAUTHORIZED.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ErrorEnvelope' } },
+          },
+      }
+    RefreshFailed:
+      {
+        description: REFRESH_FAILED.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ErrorEnvelope' } },
+          },
+      }
+    InvalidRequest:
+      {
+        description: Invalid path or query parameter.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ErrorEnvelope' } },
+          },
+      }
+    NotFound:
+      {
+        description: Requested resource was not found.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ErrorEnvelope' } },
+          },
+      }
+    Conflict:
+      {
+        description: Ambiguous legacy symbol lookup.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ErrorEnvelope' } },
+          },
+      }
+    ProviderUnavailable:
+      {
+        description: Upstream provider data is unavailable.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/ErrorEnvelope' } },
+          },
+      }
+    Status:
+      {
+        description: 'Canonical version, provenance, and freshness.',
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/StatusEnvelope' } },
+          },
+      }
+    Network:
+      {
+        description: Solana network dashboard data or an explicit unavailable fixture.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/NetworkEnvelope' } },
+          },
+      }
+    Swaps:
+      description: Reviewed swaps from the registered tracked pools only.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SwapsEnvelope' }
+    AssetList:
+      {
+        description: Canonical Jupiter asset list.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/AssetListEnvelope' } },
+          },
+      }
+    Catalogs:
+      {
+        description: Snapshot-backed discovery catalogs.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/CatalogsEnvelope' } },
+          },
+      }
+    DefiLlama:
+      {
+        description: Cached DefiLlama dashboard.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/DefiLlamaEnvelope' } },
+          },
+      }
+    AssetDetail:
+      {
+        description: Canonical asset with optional compatibility history.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/AssetDetailEnvelope' } },
+          },
+      }
+    History:
+      {
+        description: Close-price history projected from Birdeye USD candles.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/HistoryEnvelope' } },
+          },
+      }
+    Candles:
+      {
+        description: 'Fixed page of 300 Birdeye USD OHLCV candles, or null when unavailable.',
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/CandlesEnvelope' } },
+          },
+      }
+    OnchainAsset:
+      {
+        description: Helius token profile and mint state.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/OnchainAssetEnvelope' } },
+          },
+      }
+    Holders:
+      {
+        description: 'Helius token-account page, not a unique-holder count.',
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/HoldersEnvelope' } },
+          },
+      }
+    Distribution:
+      {
+        description: 'Largest token accounts, not unique holders.',
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/DistributionEnvelope' } },
+          },
+      }
+    AssetTransactions:
+      {
+        description: Mint-address transaction-history page.,
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: '#/components/schemas/AssetTransactionsEnvelope' },
+              },
+          },
+      }
+    Wallet:
+      {
+        description: DAS balances and valuation.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/WalletEnvelope' } },
+          },
+      }
+    Transactions:
+      {
+        description: Parsed wallet event page.,
+        content:
+          {
+            application/json:
+              { schema: { $ref: '#/components/schemas/TransactionsEnvelope' } },
+          },
+      }
+    RecentTransactions:
+      {
+        description: Representative dashboard sample refreshed at most every 60 seconds while active.,
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: '#/components/schemas/RecentTransactionsEnvelope' },
+              },
+          },
+      }
+  schemas:
+    Envelope:
+      type: object
+      required: [data, meta]
+      properties: { data: {}, meta: { $ref: '#/components/schemas/Meta' } }
+    Meta:
+      {
+        type: object,
+        required: [requestId],
+        properties: { requestId: { type: string } },
+      }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        {
+          error:
+            {
+              type: object,
+              required: [code, message, requestId],
+              properties:
+                {
+                  code: { type: string },
+                  message: { type: string },
+                  requestId: { type: string },
+                },
+            },
+        }
+    HealthEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [status, version],
+                      properties:
+                        { status: { const: ok }, version: { type: string } },
+                    },
+                },
+            },
+          ],
+      }
+    ReadyEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [status, snapshotState],
+                      properties:
+                        {
+                          status: { const: ready },
+                          snapshotState: { type: string },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    Asset:
+      type: object
+      required:
+        [
+          mint,
+          symbol,
+          name,
+          decimals,
+          iconUrl,
+          priceUsd,
+          marketCapUsd,
+          circulatingSupply,
+          totalSupply,
+          fullyDilutedValuationUsd,
+          change24hPct,
+          liquidityUsd,
+          holderCount,
+          verification,
+          quality,
+          activity,
+        ]
+      properties:
+        mint: { type: [string, 'null'] }
+        symbol: { type: [string, 'null'] }
+        name: { type: [string, 'null'] }
+        decimals: { type: [integer, 'null'] }
+        iconUrl: { type: [string, 'null'] }
+        priceUsd: { type: [number, 'null'] }
+        marketCapUsd: { type: [number, 'null'] }
+        circulatingSupply: { type: [number, 'null'] }
+        totalSupply: { type: [number, 'null'] }
+        fullyDilutedValuationUsd: { type: [number, 'null'] }
+        change24hPct: { type: [number, 'null'] }
+        liquidityUsd: { type: [number, 'null'] }
+        holderCount: { type: [number, 'null'] }
+        verification:
+          type: object
+          required: [isVerified, tags]
+          properties:
+            isVerified: { type: boolean }
+            tags: { type: array, items: { type: string } }
+        quality:
+          type: object
+          required: [organicScore, organicScoreLabel, audit]
+          properties:
+            organicScore: { type: [number, 'null'] }
+            organicScoreLabel: { type: [string, 'null'] }
+            audit:
+              description: Provider-backed audit fields; not a security guarantee.
+              anyOf:
+                - { type: object, additionalProperties: true }
+                - { type: array, items: {} }
+                - { type: 'null' }
+        activity:
+          type: object
+          required: [buyVolume24hUsd, sellVolume24hUsd, volume24hUsd]
+          properties:
+            buyVolume24hUsd: { type: [number, 'null'] }
+            sellVolume24hUsd: { type: [number, 'null'] }
+            volume24hUsd: { type: [number, 'null'] }
+    AssetListEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: array,
+                      items: { $ref: '#/components/schemas/Asset' },
+                    },
+                },
+            },
+          ],
+      }
+    CatalogsEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [topTraded, trending, recent],
+                      properties:
+                        {
+                          topTraded:
+                            {
+                              type: array,
+                              items: { $ref: '#/components/schemas/Asset' },
+                            },
+                          trending:
+                            {
+                              type: array,
+                              items: { $ref: '#/components/schemas/Asset' },
+                            },
+                          recent:
+                            {
+                              type: array,
+                              items: { $ref: '#/components/schemas/Asset' },
+                            },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    AssetDetailEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      allOf:
+                        [
+                          { $ref: '#/components/schemas/Asset' },
+                          {
+                            type: object,
+                            properties:
+                              {
+                                history:
+                                  {
+                                    type: object,
+                                    required: [points, state, fetchedAt],
+                                    properties:
+                                      {
+                                        points:
+                                          {
+                                            type: [array, 'null'],
+                                            items:
+                                              {
+                                                $ref: '#/components/schemas/HistoryPoint',
+                                              },
+                                          },
+                                        state: { type: string },
+                                        fetchedAt:
+                                          {
+                                            type: [string, 'null'],
+                                            format: date-time,
+                                          },
+                                      },
+                                  },
+                              },
+                          },
+                        ],
+                    },
+                },
+            },
+          ],
+      }
+    HistoryEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [mint, range, points],
+                      properties:
+                        {
+                          mint: { type: string },
+                          range: { type: string, enum: [1d, 7d] },
+                          points:
+                            {
+                              type: [array, 'null'],
+                              items:
+                                { $ref: '#/components/schemas/HistoryPoint' },
+                            },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    HistoryPoint:
+      {
+        type: object,
+        required: [timestamp, priceUsd],
+        properties:
+          {
+            timestamp: { type: string, format: date-time },
+            priceUsd: { type: number },
+          },
+      }
+    CandlesEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [mint, timeframe, count, candles],
+                      properties:
+                        {
+                          mint: { type: string },
+                          timeframe: { type: string },
+                          count: { type: integer, const: 300 },
+                          candles:
+                            {
+                              type: [array, 'null'],
+                              items: { $ref: '#/components/schemas/Candle' },
+                            },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    Candle:
+      {
+        type: object,
+        required:
+          [timestamp, openUsd, highUsd, lowUsd, closeUsd, volume, volumeUsd],
+        properties:
+          {
+            timestamp: { type: string, format: date-time },
+            openUsd: { type: number },
+            highUsd: { type: number },
+            lowUsd: { type: number },
+            closeUsd: { type: number },
+            volume: { type: number },
+            volumeUsd: { type: number },
+          },
+      }
+    StatusEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required:
+                        [version, chain, provenance, freshness, reviewedSwaps],
+                      properties:
+                        {
+                          version: { type: string },
+                          chain: { const: solana },
+                          provenance:
+                            {
+                              type: object,
+                              required: [snapshot, market, reviewedSwaps],
+                              properties:
+                                {
+                                  snapshot: { type: string },
+                                  market: { type: string },
+                                  reviewedSwaps: { type: string },
+                                },
+                            },
+                          freshness:
+                            {
+                              type: object,
+                              required:
+                                [snapshot, snapshotCreatedAt, marketDataAsOf],
+                              properties:
+                                {
+                                  snapshot:
+                                    {
+                                      type: string,
+                                      enum: [fresh, stale, fixture],
+                                    },
+                                  snapshotCreatedAt:
+                                    { type: string, format: date-time },
+                                  marketDataAsOf:
+                                    { type: string, format: date-time },
+                                },
+                            },
+                          reviewedSwaps:
+                            {
+                              type: object,
+                              required: [scope, count],
+                              properties:
+                                {
+                                  scope: { type: string },
+                                  count: { type: integer },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    WalletEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [address],
+                      description: 'Fresh DAS responses populate balances and valuation; compatible cached wallet records can omit those fields.',
+                      properties:
+                        {
+                          address: { type: string },
+                          balances:
+                            {
+                              type: array,
+                              items:
+                                { $ref: '#/components/schemas/WalletBalance' },
+                            },
+                          holdingsTruncated: { type: boolean },
+                          valuation:
+                            { $ref: '#/components/schemas/WalletValuation' },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    TransactionsEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [events, nextCursor],
+                      properties:
+                        {
+                          events:
+                            {
+                              type: array,
+                              items:
+                                { $ref: '#/components/schemas/WalletEvent' },
+                            },
+                          nextCursor: { type: [string, 'null'] },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    RecentTransactionsEnvelope:
+      {
+        allOf:
+          [
+            { $ref: '#/components/schemas/Envelope' },
+            {
+              type: object,
+              required: [data],
+              properties:
+                {
+                  data:
+                    {
+                      type: object,
+                      required: [network, transactions],
+                      properties:
+                        {
+                          network: { $ref: '#/components/schemas/NetworkData' },
+                          transactions:
+                            {
+                              type: array,
+                              items:
+                                {
+                                  $ref: '#/components/schemas/RecentTransaction',
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+          ],
+      }
+    RecentTransaction:
+      {
+        type: object,
+        required: [signature, slot, blockTime, status, action],
+        properties:
+          {
+            signature: { type: string },
+            slot: { type: integer },
+            blockTime: { type: [string, 'null'], format: date-time },
+            status: { type: string, enum: [confirmed] },
+            action: { type: [string, 'null'] },
+          },
+      }
+    AtomicAmount:
+      type: string
+      pattern: '^\d+$'
+      description: Exact base-unit amount; never a JSON number.
+    RefreshEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [status, createdAt]
+              properties:
+                status: { type: string, const: refreshed }
+                createdAt: { type: string, format: date-time }
+    SwapsEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [scope, swaps]
+              properties:
+                scope: { type: string }
+                swaps:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, timestamp, protocol, wallet, input, output]
+                    properties:
+                      id: { type: [string, 'null'] }
+                      timestamp: { type: [string, 'null'], format: date-time }
+                      protocol: { type: [string, 'null'] }
+                      wallet: { type: [string, 'null'] }
+                      input:
+                        anyOf:
+                          - { $ref: '#/components/schemas/SwapAmount' }
+                          - { type: 'null' }
+                      output:
+                        anyOf:
+                          - { $ref: '#/components/schemas/SwapAmount' }
+                          - { type: 'null' }
+    SwapAmount:
+      type: object
+      required: [mint, atomicAmount, decimals]
+      properties:
+        mint: { type: [string, 'null'] }
+        atomicAmount: { type: string }
+        decimals: { type: [integer, 'null'] }
+    WalletBalance:
+      type: object
+      required:
+        [
+          mint,
+          symbol,
+          name,
+          decimals,
+          iconUrl,
+          atomicAmount,
+          amount,
+          priceUsd,
+          valueUsd,
+        ]
+      properties:
+        mint: { type: string }
+        symbol: { type: [string, 'null'] }
+        name: { type: [string, 'null'] }
+        decimals: { type: integer }
+        iconUrl: { type: [string, 'null'] }
+        atomicAmount: { $ref: '#/components/schemas/AtomicAmount' }
+        amount: { type: [string, 'null'] }
+        priceUsd: { type: [number, 'null'] }
+        valueUsd: { type: [number, 'null'] }
+    WalletValuation:
+      type: object
+      description: Fields may be absent in compatible partial cache records.
+      properties:
+        pricedSubtotalUsd: { type: number }
+        holdingCount: { type: integer }
+        pricedHoldingCount: { type: integer }
+        unpricedHoldingCount: { type: integer }
+        complete: { type: boolean }
+    WalletEvent:
+      type: object
+      required:
+        [id, timestamp, type, source, status, summary, description, transfers]
+      properties:
+        id: { type: [string, 'null'] }
+        timestamp: { type: [string, 'null'], format: date-time }
+        type: { type: [string, 'null'] }
+        source: { type: [string, 'null'] }
+        status: { type: string, enum: [success, failed] }
+        summary: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        transfers:
+          type: object
+          required: [native, tokens]
+          properties:
+            native:
+              type: array
+              items:
+                type: object
+                required: [from, to, atomicAmount, decimals]
+                properties:
+                  from: { type: [string, 'null'] }
+                  to: { type: [string, 'null'] }
+                  atomicAmount: { type: [string, 'null'] }
+                  decimals: { type: integer, const: 9 }
+            tokens:
+              type: array
+              items:
+                type: object
+                required:
+                  [
+                    mint,
+                    from,
+                    to,
+                    fromTokenAccount,
+                    toTokenAccount,
+                    atomicAmount,
+                    decimals,
+                    tokenStandard,
+                  ]
+                properties:
+                  mint: { type: [string, 'null'] }
+                  from: { type: [string, 'null'] }
+                  to: { type: [string, 'null'] }
+                  fromTokenAccount: { type: [string, 'null'] }
+                  toTokenAccount: { type: [string, 'null'] }
+                  atomicAmount: { type: [string, 'null'] }
+                  decimals: { type: [integer, 'null'] }
+                  tokenStandard: { type: [string, 'null'] }
+    NetworkEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data: { $ref: '#/components/schemas/NetworkData' }
+    NetworkData:
+      type: object
+      required: [source, fetchedAt, chain, performance, fees]
+      properties:
+        source: { type: string }
+        fetchedAt: { type: [string, 'null'], format: date-time }
+        chain:
+          allOf:
+            - { $ref: '#/components/schemas/NetworkGroup' }
+            - type: object
+              properties:
+                commitment: { type: string }
+                processedSlot: { type: [number, 'null'] }
+                confirmedSlot: { type: [number, 'null'] }
+                finalizedSlot: { type: [number, 'null'] }
+                blockHeight: { type: [number, 'null'] }
+                blockTime: { type: [number, 'null'] }
+                epoch: { type: [number, 'null'] }
+                slotIndex: { type: [number, 'null'] }
+                slotsInEpoch: { type: [number, 'null'] }
+                epochProgressPct: { type: [number, 'null'] }
+        performance:
+          allOf:
+            - { $ref: '#/components/schemas/NetworkGroup' }
+            - type: object
+              properties:
+                tps: { type: [number, 'null'] }
+                nonVoteTps: { type: [number, 'null'] }
+                sampleCount: { type: integer }
+                samplePeriodSecs: { type: number }
+                transactions: { type: number }
+                nonVoteTransactions: { type: [number, 'null'] }
+        fees:
+          allOf:
+            - { $ref: '#/components/schemas/NetworkGroup' }
+            - type: object
+              properties:
+                averageFeeLamports: { type: [number, 'null'] }
+                feeSampleCount: { type: integer }
+                medianPriorityFeeMicroLamports: { type: [number, 'null'] }
+                priorityFeeSampleCount: { type: integer }
+        production:
+          allOf:
+            - { $ref: '#/components/schemas/NetworkGroup' }
+            - type: object
+              properties:
+                assignedLeaderSlots: { type: number }
+                blocksProduced: { type: number }
+                missedLeaderSlots: { type: number }
+                productionPct: { type: [number, 'null'] }
+                range: { type: [object, 'null'], additionalProperties: true }
+        validators:
+          allOf:
+            - { $ref: '#/components/schemas/NetworkGroup' }
+            - type: object
+              properties:
+                currentVoteAccounts: { type: integer }
+                delinquentVoteAccounts: { type: integer }
+        economics:
+          allOf:
+            - { $ref: '#/components/schemas/NetworkGroup' }
+            - type: object
+              properties:
+                totalSol: { type: [number, 'null'] }
+                circulatingSol: { type: [number, 'null'] }
+                nonCirculatingSol: { type: [number, 'null'] }
+                inflationTotalPct: { type: [number, 'null'] }
+                inflationValidatorPct: { type: [number, 'null'] }
+                inflationFoundationPct: { type: [number, 'null'] }
+                inflationEpoch: { type: [number, 'null'] }
+                inflationGovernor:
+                  { type: [object, 'null'], additionalProperties: true }
+        reliability:
+          allOf:
+            - { $ref: '#/components/schemas/NetworkGroup' }
+            - type: object
+              properties:
+                available: { type: boolean }
+                finalizedSlot: { type: [number, 'null'] }
+                blockHeight: { type: [number, 'null'] }
+                blockTime: { type: [number, 'null'] }
+                transactionCount: { type: integer }
+                failedTransactions: { type: [integer, 'null'] }
+                failurePct: { type: [number, 'null'] }
+    NetworkGroup:
+      type: object
+      description: Metrics are optional when a group is unavailable; retained metrics can be stale.
+      properties:
+        state: { type: string, enum: [fresh, stale, unavailable] }
+        asOf: { type: [string, 'null'], format: date-time }
+    DefiLlamaEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [source, fetchedAt, dexes, protocols]
+              properties:
+                source: { type: string, const: defillama }
+                fetchedAt: { type: [string, 'null'], format: date-time }
+                dexes:
+                  type: object
+                  required: [total24hUsd, total7dUsd, items]
+                  properties:
+                    total24hUsd: { type: [number, 'null'] }
+                    total7dUsd: { type: [number, 'null'] }
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          [
+                            name,
+                            slug,
+                            logo,
+                            total24hUsd,
+                            total7dUsd,
+                            change1dPct,
+                          ]
+                        properties:
+                          name: { type: string }
+                          slug: { type: string }
+                          logo: { type: [string, 'null'] }
+                          total24hUsd: { type: [number, 'null'] }
+                          total7dUsd: { type: [number, 'null'] }
+                          change1dPct: { type: [number, 'null'] }
+                protocols:
+                  type: object
+                  required: [total, items]
+                  properties:
+                    total: { type: integer }
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          [
+                            name,
+                            slug,
+                            logo,
+                            category,
+                            solanaTvlUsd,
+                            change1dPct,
+                            change7dPct,
+                          ]
+                        properties:
+                          name: { type: string }
+                          slug: { type: string }
+                          logo: { type: [string, 'null'] }
+                          category: { type: [string, 'null'] }
+                          solanaTvlUsd: { type: number }
+                          change1dPct: { type: [number, 'null'] }
+                          change7dPct: { type: [number, 'null'] }
+    OnchainAssetEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [mint]
+              description: Fresh provider profiles populate all fields; compatible cached profiles may contain only the mint or partial metadata.
+              properties:
+                mint: { type: string }
+                interface: { type: [string, 'null'] }
+                tokenProgram: { type: [string, 'null'] }
+                lastIndexedSlot: { type: [integer, 'null'] }
+                metadata:
+                  type: object
+                  properties:
+                    name: { type: [string, 'null'] }
+                    symbol: { type: [string, 'null'] }
+                    description: { type: [string, 'null'] }
+                    uri: { type: [string, 'null'] }
+                    image: { type: [string, 'null'] }
+                    externalUrl: { type: [string, 'null'] }
+                mintState:
+                  type: object
+                  properties:
+                    decimals: { type: [integer, 'null'] }
+                    supplyAtomic: { type: [string, 'null'] }
+                    supply: { type: [string, 'null'] }
+                    mintAuthority: { type: [string, 'null'] }
+                    freezeAuthority: { type: [string, 'null'] }
+                    isMutable: { type: [boolean, 'null'] }
+                    extensions: { type: array, items: { type: string } }
+    Holder:
+      type: object
+      required:
+        [tokenAccount, owner, atomicAmount, amount, decimals, frozen, delegated]
+      properties:
+        tokenAccount: { type: [string, 'null'] }
+        owner: { type: [string, 'null'] }
+        atomicAmount: { $ref: '#/components/schemas/AtomicAmount' }
+        amount: { type: [string, 'null'] }
+        decimals: { type: integer }
+        frozen: { type: [boolean, 'null'] }
+        delegated: { type: [string, 'null'] }
+    HoldersEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [holders, page, total, cursor]
+              properties:
+                holders:
+                  {
+                    type: array,
+                    items: { $ref: '#/components/schemas/Holder' },
+                  }
+                page: { type: integer }
+                total: { type: [integer, 'null'] }
+                cursor: { type: [string, 'null'] }
+    DistributionEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [accounts, supplyAtomic, slot]
+              properties:
+                supplyAtomic: { type: [string, 'null'] }
+                slot: { type: [integer, 'null'] }
+                accounts:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      [
+                        rank,
+                        tokenAccount,
+                        owner,
+                        atomicAmount,
+                        amount,
+                        decimals,
+                        frozen,
+                        supplyPercent,
+                      ]
+                    properties:
+                      rank: { type: integer }
+                      tokenAccount: { type: string }
+                      owner: { type: [string, 'null'] }
+                      atomicAmount:
+                        { $ref: '#/components/schemas/AtomicAmount' }
+                      amount: { type: [string, 'null'] }
+                      decimals: { type: integer }
+                      frozen: { type: [boolean, 'null'] }
+                      supplyPercent: { type: [string, 'null'] }
+    AssetTransactionsEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [transactions, nextCursor]
+              properties:
+                nextCursor: { type: [string, 'null'] }
+                transactions:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      [
+                        signature,
+                        slot,
+                        timestamp,
+                        status,
+                        action,
+                        protocol,
+                        summary,
+                        transfers,
+                      ]
+                    properties:
+                      signature: { type: string }
+                      slot: { type: [integer, 'null'] }
+                      timestamp: { type: [string, 'null'], format: date-time }
+                      status:
+                        {
+                          type: [string, 'null'],
+                          enum: [success, failed, null],
+                        }
+                      action: { type: [string, 'null'] }
+                      protocol: { type: [string, 'null'] }
+                      summary: { type: [string, 'null'] }
+                      transfers:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            [
+                              from,
+                              to,
+                              fromTokenAccount,
+                              toTokenAccount,
+                              atomicAmount,
+                              amount,
+                              decimals,
+                            ]
+                          properties:
+                            from: { type: [string, 'null'] }
+                            to: { type: [string, 'null'] }
+                            fromTokenAccount: { type: [string, 'null'] }
+                            toTokenAccount: { type: [string, 'null'] }
+                            atomicAmount:
+                              { $ref: '#/components/schemas/AtomicAmount' }
+                            amount: { type: [string, 'null'] }
+                            decimals: { type: integer }
+  securitySchemes:
+    refreshToken: { type: http, scheme: bearer }

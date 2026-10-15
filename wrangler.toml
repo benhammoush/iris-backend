@@ -1,0 +1,62 @@
+name = "iris-backend"
+main = "src/index.ts"
+compatibility_date = "2026-10-02"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[vars]
+CORS_ORIGINS = ""
+
+[[kv_namespaces]]
+binding = "SNAPSHOTS"
+# Unconfigured bootstrap: never bind the old hosted storage by default.
+id = "00000000000000000000000000000000"
+
+# Local-only: npm run dev explicitly disables remote access.
+[env.local]
+name = "iris-backend-local"
+
+[env.local.vars]
+CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+
+[[env.local.kv_namespaces]]
+binding = "SNAPSHOTS"
+id = "00000000000000000000000000000000"
+
+[env.dev]
+name = "iris-backend-dev"
+
+[env.dev.vars]
+CORS_ORIGINS = "https://iris-frontend-dev.example.invalid,http://localhost:5173"
+
+[[env.dev.kv_namespaces]]
+binding = "SNAPSHOTS"
+# Replace with a newly provisioned dev namespace before activation.
+id = "00000000000000000000000000000000"
+
+[env.e2e]
+name = "iris-backend-e2e"
+
+[env.e2e.vars]
+CORS_ORIGINS = "http://127.0.0.1:4173"
+PROVIDER_MODE = "cache-only"
+
+[[env.e2e.kv_namespaces]]
+binding = "SNAPSHOTS"
+id = "00000000000000000000000000000000"
+
+[env.production]
+name = "iris-backend-production"
+
+[env.production.vars]
+CORS_ORIGINS = "https://iris-frontend-production.example.invalid"
+
+[[env.production.kv_namespaces]]
+binding = "SNAPSHOTS"
+# Replace with a newly provisioned production namespace before activation.
+id = "00000000000000000000000000000000"
+
+[env.production.triggers]
+crons = ["0 * * * *"]
