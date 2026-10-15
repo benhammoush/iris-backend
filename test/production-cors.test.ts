@@ -8,7 +8,7 @@ const configuration = readFileSync(
   new URL('../wrangler.toml', import.meta.url),
   'utf8',
 );
-const dashboardOrigin = 'https://iris-frontend-production.example.invalid';
+const dashboardOrigin = 'https://iris-frontend-production.vercel.app';
 
 function env(environment: string) {
   const section = configuration
@@ -46,8 +46,11 @@ test('production denies local and other environment origins for GET and prefligh
     'http://localhost:3000',
     'http://localhost:5173',
     'http://127.0.0.1:5173',
-    'https://iris-frontend-dev.example.invalid',
+    'https://iris-frontend-dev.vercel.app',
     'https://retired-frontend.example.invalid',
+    'https://iris-dashboard-phi.vercel.app',
+    'https://iris-dev.vercel.app',
+    'https://iris-staging-orcin.vercel.app',
   ]) {
     for (const method of ['GET', 'OPTIONS']) {
       const response = await worker.fetch(
