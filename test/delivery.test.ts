@@ -214,11 +214,11 @@ test('hosted Workers bind distinct new namespaces with explicit workers.dev rout
   assert.equal(namespaces.size, 2);
 });
 
-test('production explicitly disables version preview URLs without disabling its API', () => {
-  const production = configuration
-    .split('[env.production]')[1]
-    ?.split(/^\[/m)[0];
-  assert.ok(production, 'Missing production Worker configuration');
-  assert.match(production, /^workers_dev = true\s*$/m);
-  assert.match(production, /^preview_urls = false\s*$/m);
+test('hosted Workers explicitly disable version previews without disabling their APIs', () => {
+  for (const target of ['dev', 'production']) {
+    const worker = configuration.split(`[env.${target}]`)[1]?.split(/^\[/m)[0];
+    assert.ok(worker, `Missing ${target} Worker configuration`);
+    assert.match(worker, /^workers_dev = true\s*$/m);
+    assert.match(worker, /^preview_urls = false\s*$/m);
+  }
 });
