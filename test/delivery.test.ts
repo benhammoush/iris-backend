@@ -213,3 +213,12 @@ test('hosted Workers bind distinct new namespaces with explicit workers.dev rout
   }
   assert.equal(namespaces.size, 2);
 });
+
+test('production explicitly disables version preview URLs without disabling its API', () => {
+  const production = configuration
+    .split('[env.production]')[1]
+    ?.split(/^\[/m)[0];
+  assert.ok(production, 'Missing production Worker configuration');
+  assert.match(production, /^workers_dev = true\s*$/m);
+  assert.match(production, /^preview_urls = false\s*$/m);
+});
