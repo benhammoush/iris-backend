@@ -29,9 +29,15 @@ const bash =
  * @param target - Requested hosted deployment target.
  * @param sha - Candidate source identity, not a repository checkout.
  * @param ref - Workflow branch; only main may manually release.
+ * @param attempt - Explicit run attempt, independent of the host test environment.
  * @returns The Bash exit status; interpreter errors fail rather than skip tests.
  */
-function validateRelease(target: string, sha: string, ref: string) {
+function validateRelease(
+  target: string,
+  sha: string,
+  ref: string,
+  attempt = '1',
+) {
   const script = workflow.match(
     /- name: Validate manual release[\s\S]*?run: \|\n((?: {10}[^\n]*\n)+)/,
   )?.[1];
@@ -42,6 +48,7 @@ function validateRelease(target: string, sha: string, ref: string) {
       TARGET: target,
       SOURCE_SHA: sha,
       GITHUB_REF: ref,
+      GITHUB_RUN_ATTEMPT: attempt,
     },
     encoding: 'utf8',
     timeout: 10_000,
@@ -50,6 +57,69 @@ function validateRelease(target: string, sha: string, ref: string) {
   assert.notEqual(result.status, null, result.stderr);
   return result.status;
 }
+
+/**
+ * Execute only the actual predeployment production guard, never a provider command.
+ * @param target - Selected hosted environment.
+ * @param event - Workflow trigger, which must be dispatch for production.
+ * @param attempt - Explicit attempt to exercise deployment-only reruns.
+ * @returns The guard exit status; interpreter errors fail verification.
+ */
+function validateDeploymentAttempt(
+  target: string,
+  event: string,
+  attempt: string,
+) {
+  const deployment = workflow.slice(
+    workflow.indexOf('- name: Validate configuration, deploy'),
+  );
+  const script = deployment.match(
+    / {10}if \[ "\$TARGET" = production \]; then\n(?: {12}[^\n]*\n)+ {10}fi/,
+  )?.[0];
+  assert.ok(script, 'Missing predeployment production guard');
+  const result = spawnSync(bash, ['-e', '-c', script.replace(/^ {10}/gm, '')], {
+    env: {
+      ...process.env,
+      TARGET: target,
+      GITHUB_EVENT_NAME: event,
+      GITHUB_RUN_ATTEMPT: attempt,
+    },
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  if (result.error) throw result.error;
+  assert.notEqual(result.status, null, result.stderr);
+  return result.status;
+}
+
+test('production requires a new dispatch including deployment-only reruns', () => {
+  for (const attempt of ['2', '', '0', '01', 'invalid']) {
+    assert.notEqual(
+      validateRelease('production', 'a'.repeat(40), 'refs/heads/main', attempt),
+      0,
+    );
+  }
+  assert.equal(
+    validateRelease('dev', 'a'.repeat(40), 'refs/heads/main', '2'),
+    0,
+  );
+  assert.equal(
+    validateDeploymentAttempt('production', 'workflow_dispatch', '1'),
+    0,
+  );
+  for (const [event, attempt] of [
+    ['workflow_dispatch', '2'],
+    ['workflow_dispatch', ''],
+    ['workflow_dispatch', '0'],
+    ['workflow_dispatch', '01'],
+    ['workflow_dispatch', 'invalid'],
+    ['push', '1'],
+    ['', '1'],
+  ]) {
+    assert.notEqual(validateDeploymentAttempt('production', event, attempt), 0);
+  }
+  assert.equal(validateDeploymentAttempt('dev', 'push', '2'), 0);
+});
 
 test('manual releases accept only dev and production with exact source on main', () => {
   for (const target of ['dev', 'production']) {
@@ -77,6 +147,8 @@ test('manual releases accept only dev and production with exact source on main',
 });
 
 test('delivery retains source, main, approval environment and serialization controls', () => {
+  const deployment = workflow.slice(workflow.indexOf('\n  deploy:'));
+  assert.ok(deployment.includes("TARGET: ${{ inputs.target || 'dev' }}"));
   assert.match(workflow, /options: \[dev, production\]/);
   assert.match(workflow, /TARGET: \$\{\{ inputs\.target \|\| 'dev' \}\}/);
   assert.match(workflow, /git merge-base --is-ancestor HEAD origin\/main/);
