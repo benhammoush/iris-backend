@@ -28,6 +28,7 @@ id = "00000000000000000000000000000000"
 [env.dev]
 name = "iris-backend-dev"
 workers_dev = true
+preview_urls = false
 
 [env.dev.vars]
 CORS_ORIGINS = "https://iris-frontend-dev.vercel.app,http://localhost:5173"
@@ -51,6 +52,7 @@ id = "00000000000000000000000000000000"
 [env.production]
 name = "iris-backend-production"
 workers_dev = true
+preview_urls = false
 
 [env.production.vars]
 CORS_ORIGINS = "https://iris-frontend-production.vercel.app"
