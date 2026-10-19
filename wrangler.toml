@@ -27,14 +27,16 @@ id = "00000000000000000000000000000000"
 
 [env.dev]
 name = "iris-backend-dev"
+workers_dev = true
+preview_urls = false
 
 [env.dev.vars]
-CORS_ORIGINS = "https://iris-frontend-dev.example.invalid,http://localhost:5173"
+CORS_ORIGINS = "https://iris-frontend-dev.vercel.app,http://localhost:5173"
 
 [[env.dev.kv_namespaces]]
 binding = "SNAPSHOTS"
-# Replace with a newly provisioned dev namespace before activation.
-id = "00000000000000000000000000000000"
+# Isolated namespace provisioned for the new dev Worker.
+id = "5bedf23d861c4e5d8a72afc9305bbf46"
 
 [env.e2e]
 name = "iris-backend-e2e"
@@ -49,14 +51,16 @@ id = "00000000000000000000000000000000"
 
 [env.production]
 name = "iris-backend-production"
+workers_dev = true
+preview_urls = false
 
 [env.production.vars]
-CORS_ORIGINS = "https://iris-frontend-production.example.invalid"
+CORS_ORIGINS = "https://iris-frontend-production.vercel.app"
 
 [[env.production.kv_namespaces]]
 binding = "SNAPSHOTS"
-# Replace with a newly provisioned production namespace before activation.
-id = "00000000000000000000000000000000"
+# Isolated namespace provisioned for the new production Worker.
+id = "4442b6231710407ea3a668dc9a8a8794"
 
 [env.production.triggers]
 crons = ["0 * * * *"]
