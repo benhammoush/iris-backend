@@ -42,6 +42,8 @@ Use Node 22.13+ within the 22.x line (`.nvmrc` and CI). The frontend independent
 
 Walkthrough evidence is read through GraphQL with last-editor metadata. Only never-edited comments or comments last edited by CodeRabbit itself qualify; missing provenance or truncated comments cannot supply review coverage.
 
+The owner assigns a bounded task and authorizes its endpoint. The assistant owns implementation, affected checks, authorized PR publication and valid CI/review repairs, including resuming paused CodeRabbit reviews. The owner decides when to merge after current-head CI and actual approval pass. No automatic merger, merge PAT or backlog pickup is required. An authorized merge triggers existing dev deployment and API smoke; verify the exact source/provider identity and affected dev behavior before reporting acceptance. Production remains a separate manually approved promotion of the exact accepted compatible dev pair under the [environment runbook](https://github.com/benhammoush/iris-frontend/blob/main/ENVIRONMENTS.md).
+
 `test/delivery.test.ts` exercises the workflow's manual-input guard with valid and invalid public fixtures and checks source/configuration controls structurally. It uses Bash on CI/Linux and Git Bash on Windows; set `IRIS_TEST_BASH` to the executable path for a nonstandard Windows installation. It performs no Git/provider operations and cannot certify native approval, merged ancestry or deployed acceptance.
 
 ## TypeScript migration status

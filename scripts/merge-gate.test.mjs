@@ -65,6 +65,7 @@ function fixture() {
           context: 'CodeRabbit',
           state: 'success',
           description: 'Review completed',
+          creator: { login: 'coderabbitai[bot]', type: 'Bot' },
         },
       ],
     },
@@ -77,6 +78,19 @@ test('complete evidence is ready only for a human merge, never automatic authori
   assert.equal(result.canMerge, false);
   assert.equal(result.authorization, 'manual-only');
   assert.throws(() => evaluate(fixture(), { ...policy, mode: 'auto' }));
+});
+
+test('matching completion text from another creator cannot substitute for CodeRabbit', () => {
+  for (const creator of [
+    undefined,
+    { login: 'maintainer', type: 'User' },
+    { login: 'coderabbitai[bot]', type: 'User' },
+    { login: 'other[bot]', type: 'Bot' },
+  ]) {
+    const value = fixture();
+    value.status.statuses[0].creator = creator;
+    assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+  }
 });
 
 test('workflow path revision suffix does not replace independent identity checks', () => {
@@ -273,7 +287,7 @@ test('collector checks a complete current candidate and detects mid-read pushes'
         if (path.includes('/runs/1/jobs?')) return { jobs: value.jobs };
         if (path.includes('/reviews?')) return value.reviews;
         if (path.includes('/comments?')) return [];
-        if (path.endsWith('/status')) return value.status;
+        if (path.includes('/statuses?')) return value.status.statuses;
         throw new Error('Unexpected endpoint');
       },
     };
@@ -315,7 +329,7 @@ test('same-head CI reruns, new reviews, statuses and conversations invalidate co
         if (path.includes('/runs/1/jobs?')) return { jobs: changed().jobs };
         if (path.includes('/reviews?')) return changed().reviews;
         if (path.includes('/comments?')) return [];
-        if (path.endsWith('/status')) return changed().status;
+        if (path.includes('/statuses?')) return changed().status.statuses;
         throw new Error('Unexpected endpoint');
       },
     };

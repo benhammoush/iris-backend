@@ -147,6 +147,8 @@ export function evaluate(value, policy) {
   if (
     status?.sha !== sha ||
     completion?.state !== 'success' ||
+    completion.creator?.login !== 'coderabbitai[bot]' ||
+    completion.creator?.type !== 'Bot' ||
     completion?.description !== 'Review completed'
   )
     reasons.push('CodeRabbit completion status is missing or unrecognized');
@@ -195,7 +197,7 @@ async function collect(client, pr, policy) {
       'workflow_runs',
     ),
     list(client, `${root}/pulls/${number}/reviews`),
-    client.get(`${root}/commits/${sha}/status`),
+    list(client, `${root}/commits/${sha}/statuses`),
     client.native(policy.repository, number),
   ]);
   const run = runs
@@ -217,7 +219,7 @@ async function collect(client, pr, policy) {
     run,
     jobs,
     reviews,
-    status,
+    status: { sha, statuses: status },
     walkthroughs: native?.walkthroughs ?? [],
   };
 }
