@@ -99,7 +99,7 @@ export function evaluate(value, policy) {
     run.run_attempt < 1 ||
     run?.head_sha !== sha ||
     run?.event !== 'pull_request' ||
-    run?.path !== `.github/workflows/${policy.workflow}` ||
+    run?.path?.split('@')[0] !== `.github/workflows/${policy.workflow}` ||
     run?.status !== 'completed' ||
     run?.conclusion !== 'success' ||
     !run?.pull_requests?.some(

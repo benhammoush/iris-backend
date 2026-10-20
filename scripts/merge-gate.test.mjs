@@ -79,6 +79,19 @@ test('complete evidence is ready only for a human merge, never automatic authori
   assert.throws(() => evaluate(fixture(), { ...policy, mode: 'auto' }));
 });
 
+test('workflow path revision suffix does not replace independent identity checks', () => {
+  const value = fixture();
+  value.run.path += '@refs/pull/8/merge';
+  assert.equal(evaluate(value, policy).readyForHumanMerge, true);
+  for (const path of [undefined, '.github/workflows/fake.yml@main']) {
+    value.run.path = path;
+    assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+  }
+  value.run.path = `.github/workflows/${policy.workflow}@main`;
+  value.run.head_sha = base;
+  assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+});
+
 test('missing, stale, conflicting and hostile evidence fails closed', () => {
   for (const change of [
     (v) => {
