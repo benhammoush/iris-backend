@@ -1,6 +1,40 @@
 import { appendFile, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
+/** Recognize only CodeRabbit's current-head, machine-delimited clean-review coverage. */
+export function hasReviewedWalkthrough(comments, head) {
+  return (comments ?? []).some((comment) => {
+    if (
+      comment.user?.login !== 'coderabbitai[bot]' ||
+      comment.user?.type !== 'Bot' ||
+      !comment.body?.startsWith(
+        '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->',
+      )
+    )
+      return false;
+    const starts = comment.body.split('\n<!-- final_review_risk_start -->\n');
+    if (starts.length !== 2) return false;
+    const ends = starts[1].split('\n<!-- final_review_risk_end -->');
+    if (ends.length !== 2) return false;
+    const markers = [
+      ...ends[0].matchAll(
+        /^<!-- final_review_risk_coverage:(\{[^\r\n]+\}) -->$/gm,
+      ),
+    ];
+    if (markers.length !== 1) return false;
+    try {
+      const coverage = JSON.parse(markers[0][1]);
+      return (
+        coverage.sourceCommitId === head &&
+        coverage.coveredCommitId === head &&
+        coverage.kind === 'reviewed'
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** A gate reports evidence; it never merges, approves or changes protection. */
 export function evaluate(value, policy) {
   const reasons = [];
@@ -89,12 +123,11 @@ export function evaluate(value, policy) {
   const bot = botReviews.find((review) =>
     review.body?.includes('<!-- coderabbit-review-publication v1 '),
   );
-  if (
-    !bot ||
-    !['COMMENTED', 'APPROVED'].includes(bot.state) ||
-    !bot.body?.includes('<!-- coderabbit-review-publication v1 ') ||
-    /review skipped|rate.limit|review failed/i.test(bot.body)
-  )
+  const published =
+    bot &&
+    ['COMMENTED', 'APPROVED'].includes(bot.state) &&
+    !/review skipped|rate.limit|review failed/i.test(bot.body);
+  if (!published && !hasReviewedWalkthrough(value.walkthroughs, sha))
     reasons.push('No recognized completed CodeRabbit review of this HEAD');
   const approval = botReviews.find((review) =>
     ['APPROVED', 'CHANGES_REQUESTED'].includes(review.state),
@@ -148,7 +181,7 @@ async function collect(client, pr, policy) {
   const number = pr.number;
   const sha = pr.head?.sha;
   if (!/^[0-9a-f]{40}$/.test(sha ?? '')) throw new Error('Invalid HEAD');
-  const [runs, reviews, status, native] = await Promise.all([
+  const [runs, reviews, status, native, walkthroughs] = await Promise.all([
     list(
       client,
       `${root}/actions/workflows/${policy.workflow}/runs?event=pull_request&head_sha=${sha}`,
@@ -157,6 +190,7 @@ async function collect(client, pr, policy) {
     list(client, `${root}/pulls/${number}/reviews`),
     client.get(`${root}/commits/${sha}/status`),
     client.native(policy.repository, number),
+    list(client, `${root}/issues/${number}/comments`),
   ]);
   const run = runs
     .filter(
@@ -172,7 +206,7 @@ async function collect(client, pr, policy) {
         'jobs',
       )
     : [];
-  return { native, run, jobs, reviews, status };
+  return { native, run, jobs, reviews, status, walkthroughs };
 }
 
 /** Report only stable, current candidate/base and mutable evidence snapshots. */

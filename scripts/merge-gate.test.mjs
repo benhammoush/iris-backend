@@ -3,7 +3,13 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { evaluate, observe, githubReader, candidates } from './merge-gate.mjs';
+import {
+  evaluate,
+  observe,
+  githubReader,
+  candidates,
+  hasReviewedWalkthrough,
+} from './merge-gate.mjs';
 
 const policy = JSON.parse(
   readFileSync(new URL('../.github/merge-policy.json', import.meta.url)),
@@ -169,6 +175,53 @@ test('a separate bot approval needs the completed publication on the same HEAD',
   assert.equal(evaluate(value, policy).readyForHumanMerge, false);
 });
 
+test('blank clean approvals require trusted reviewed coverage of the exact current HEAD', () => {
+  const comment = {
+    user: { login: 'coderabbitai[bot]', type: 'Bot' },
+    body:
+      '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n' +
+      '<!-- final_review_risk_start -->\n' +
+      `<!-- final_review_risk_coverage:${JSON.stringify({ sourceCommitId: head, coveredCommitId: head, kind: 'reviewed' })} -->\n` +
+      '<!-- final_review_risk_end -->',
+  };
+  assert.equal(hasReviewedWalkthrough([comment], head), true);
+  for (const altered of [
+    { ...comment, user: { ...comment.user, type: 'User' } },
+    { ...comment, user: { login: 'another-bot', type: 'Bot' } },
+    { ...comment, body: comment.body.replaceAll(head, base) },
+    {
+      ...comment,
+      body: comment.body.replace(
+        '"kind":"reviewed"',
+        '"kind":"carried-forward"',
+      ),
+    },
+    {
+      ...comment,
+      body: comment.body.replace(
+        '<!-- final_review_risk_coverage:',
+        '> <!-- final_review_risk_coverage:',
+      ),
+    },
+    {
+      ...comment,
+      body: comment.body.replace('"sourceCommitId"', 'invalid-json'),
+    },
+    { ...comment, body: comment.body + '\n<!-- final_review_risk_start -->\n' },
+  ])
+    assert.equal(hasReviewedWalkthrough([altered], head), false);
+  const value = fixture();
+  value.reviews[0].body = '';
+  assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+  value.walkthroughs = [comment];
+  assert.equal(evaluate(value, policy).readyForHumanMerge, true);
+  value.reviews[0].state = 'COMMENTED';
+  assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+  value.reviews[0].state = 'APPROVED';
+  value.status.statuses[0].state = 'pending';
+  assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+});
+
 test('collector checks a complete current candidate and detects mid-read pushes', async () => {
   for (const race of [false, true]) {
     const value = fixture();
@@ -184,6 +237,7 @@ test('collector checks a complete current candidate and detects mid-read pushes'
           return { workflow_runs: [value.run] };
         if (path.includes('/runs/1/jobs?')) return { jobs: value.jobs };
         if (path.includes('/reviews?')) return value.reviews;
+        if (path.includes('/comments?')) return [];
         if (path.endsWith('/status')) return value.status;
         throw new Error('Unexpected endpoint');
       },
@@ -225,6 +279,7 @@ test('same-head CI reruns, new reviews, statuses and conversations invalidate co
         }
         if (path.includes('/runs/1/jobs?')) return { jobs: changed().jobs };
         if (path.includes('/reviews?')) return changed().reviews;
+        if (path.includes('/comments?')) return [];
         if (path.endsWith('/status')) return changed().status;
         throw new Error('Unexpected endpoint');
       },
