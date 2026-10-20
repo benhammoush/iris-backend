@@ -1,0 +1,6 @@
+# Preserve inherited review rules; do not let authors override their own review.
+inheritance: true
+reviews:
+  high_level_summary: false
+  request_changes_workflow: true
+  allow_author_approval: false

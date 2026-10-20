@@ -48,7 +48,7 @@ function fixture() {
         id: 1,
         user: { login: 'coderabbitai[bot]', type: 'Bot' },
         commit_id: head,
-        state: 'COMMENTED',
+        state: 'APPROVED',
         body: '<!-- coderabbit-review-publication v1 fixture -->',
       },
     ],
@@ -77,6 +77,9 @@ test('missing, stale, conflicting and hostile evidence fails closed', () => {
   for (const change of [
     (v) => {
       v.pr.draft = true;
+    },
+    (v) => {
+      v.reviews[0].state = 'COMMENTED';
     },
     (v) => {
       v.pr.head.repo.full_name = 'other/fork';
@@ -147,6 +150,23 @@ test('missing, stale, conflicting and hostile evidence fails closed', () => {
     change(value);
     assert.equal(evaluate(value, policy).readyForHumanMerge, false);
   }
+});
+
+test('a separate bot approval needs the completed publication on the same HEAD', () => {
+  const value = fixture();
+  value.reviews[0].state = 'COMMENTED';
+  value.reviews.push({
+    ...value.reviews[0],
+    id: 2,
+    state: 'APPROVED',
+    body: '',
+  });
+  assert.equal(evaluate(value, policy).readyForHumanMerge, true);
+  value.reviews[1].commit_id = base;
+  assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+  value.reviews[1].commit_id = head;
+  value.reviews[1].state = 'CHANGES_REQUESTED';
+  assert.equal(evaluate(value, policy).readyForHumanMerge, false);
 });
 
 test('collector checks a complete current candidate and detects mid-read pushes', async () => {

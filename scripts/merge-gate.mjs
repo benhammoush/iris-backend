@@ -78,14 +78,17 @@ export function evaluate(value, policy) {
     )
       reasons.push(`Required CI job has not succeeded: ${name}`);
   }
-  const bot = reviews
+  const botReviews = reviews
     .filter(
       (review) =>
         review.user?.login === 'coderabbitai[bot]' &&
         review.user?.type === 'Bot' &&
         review.commit_id === sha,
     )
-    .sort((a, b) => b.id - a.id)[0];
+    .sort((a, b) => b.id - a.id);
+  const bot = botReviews.find((review) =>
+    review.body?.includes('<!-- coderabbit-review-publication v1 '),
+  );
   if (
     !bot ||
     !['COMMENTED', 'APPROVED'].includes(bot.state) ||
@@ -93,6 +96,11 @@ export function evaluate(value, policy) {
     /review skipped|rate.limit|review failed/i.test(bot.body)
   )
     reasons.push('No recognized completed CodeRabbit review of this HEAD');
+  const approval = botReviews.find((review) =>
+    ['APPROVED', 'CHANGES_REQUESTED'].includes(review.state),
+  );
+  if (approval?.state !== 'APPROVED')
+    reasons.push('CodeRabbit has not approved this HEAD');
   const completion = status?.statuses?.find(
     (item) => item.context === 'CodeRabbit',
   );
