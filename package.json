@@ -15,6 +15,7 @@
     "seed:e2e": "node --import tsx scripts/seed-e2e-kv.mjs",
     "e2e:serve": "npm run seed:e2e && npm run dev:e2e",
     "test": "node scripts/test.mjs",
+    "test:merge-policy": "node --test scripts/merge-gate.test.mjs",
     "check:types": "tsc --noEmit",
     "check:versions": "node scripts/check-version.mjs",
     "lint:openapi": "node scripts/lint-openapi.mjs openapi.yaml",

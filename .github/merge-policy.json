@@ -1,0 +1,7 @@
+{
+  "repository": "benhammoush/iris-backend",
+  "base": "main",
+  "workflow": "ci.yml",
+  "jobs": ["test"],
+  "mode": "manual"
+}

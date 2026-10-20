@@ -1,0 +1,54 @@
+name: PR merge readiness
+
+on:
+  pull_request_target:
+    branches: [main]
+    types:
+      [
+        opened,
+        reopened,
+        synchronize,
+        edited,
+        ready_for_review,
+        converted_to_draft,
+      ]
+  workflow_run:
+    workflows: [Iris Worker API — CI & Deploy]
+    types: [completed]
+  status:
+  check_run:
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to evaluate (merging remains manual)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  statuses: read
+
+concurrency:
+  group: merge-readiness-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.event.sha || github.event.check_run.head_sha || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  observe:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Report current PR evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/merge-gate.mjs
