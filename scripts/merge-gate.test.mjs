@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { evaluate, observe, githubReader, candidates } from './merge-gate.mjs';
 
 const policy = JSON.parse(
@@ -8,6 +10,7 @@ const policy = JSON.parse(
 );
 const head = 'a'.repeat(40),
   base = 'b'.repeat(40);
+/** Complete current-head/base evidence with no authority to execute a merge. */
 function fixture() {
   const pr = {
     number: 7,
@@ -252,4 +255,23 @@ test('workflow only runs trusted main with read-only permissions and no candidat
     workflow,
     /: write|secrets\.|npm ci|download-artifact|pull_request\.head/,
   );
+});
+
+test('CLI prints a safe failure reason before any API access on an untrusted ref', () => {
+  const result = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL('./merge-gate.mjs', import.meta.url))],
+    {
+      env: {
+        ...process.env,
+        GITHUB_REPOSITORY: policy.repository,
+        GITHUB_REF: 'refs/heads/task',
+      },
+      encoding: 'utf8',
+      timeout: 5000,
+    },
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Trusted repository main only/);
+  assert.doesNotMatch(result.stderr, /Bearer|Authorization|at main/);
 });

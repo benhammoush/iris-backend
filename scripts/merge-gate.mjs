@@ -245,6 +245,7 @@ export async function candidates(event, client, policy) {
   return open.filter((pr) => pr.head?.sha === sha).map((pr) => pr.number);
 }
 
+/** Run the trusted-main observer without exposing tokens or untrusted error text. */
 async function main() {
   const policy = JSON.parse(
     await readFile(
@@ -278,9 +279,30 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  main().catch(() => {
+  main().catch((error) => {
+    // Only messages authored by this module may reach Actions logs. Native
+    // fetch/JSON/filesystem errors can contain paths or source excerpts.
+    const known = new Set([
+      'Invalid gate policy',
+      'Invalid paginated evidence',
+      'Evidence exceeds pagination limit',
+      'Invalid HEAD',
+      'Invalid PR number',
+      'GITHUB_TOKEN required',
+      'Incomplete GraphQL evidence',
+      'Unsupported read',
+      'Invalid dispatch PR',
+      'No event candidate',
+      'Trusted repository main only',
+    ]);
+    const message = typeof error?.message === 'string' ? error.message : '';
+    const reason =
+      known.has(message) ||
+      /^GitHub evidence unavailable \(\d{3}\)$/.test(message)
+        ? message
+        : 'Native read or parsing failed';
     console.error(
-      'Merge gate could not establish readiness. No merge authorization.',
+      `Merge gate could not establish readiness: ${reason}. No merge authorization.`,
     );
     process.exitCode = 1;
   });
