@@ -40,6 +40,8 @@ The **PR merge readiness** workflow reports exact head/base CI, a completed Code
 
 Use Node 22.13+ within the 22.x line (`.nvmrc` and CI). The frontend independently uses Node 24. Run `npm ci`, `npm run lint`, `npm run format:check`, `npm run check:tooling`, `npm run audit:dependencies`, `npm run check:versions`, `npm run check:types`, `npm run lint:openapi`, `npm test` and `npm run check`. The last command is a production bundle **dry-run**, not a deployment. `npm run format` applies mechanical formatting; review that diff separately from behavior changes. `check:tooling` verifies that the configured guards actually reject invalid code and formatting. See [SECURITY.md](./SECURITY.md) for dependency and operator-only secret-scanning checks.
 
+Walkthrough evidence is read through GraphQL with last-editor metadata. Only never-edited comments or comments last edited by CodeRabbit itself qualify; missing provenance or truncated comments cannot supply review coverage.
+
 `test/delivery.test.ts` exercises the workflow's manual-input guard with valid and invalid public fixtures and checks source/configuration controls structurally. It uses Bash on CI/Linux and Git Bash on Windows; set `IRIS_TEST_BASH` to the executable path for a nonstandard Windows installation. It performs no Git/provider operations and cannot certify native approval, merged ancestry or deployed acceptance.
 
 ## TypeScript migration status

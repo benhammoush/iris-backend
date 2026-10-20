@@ -177,7 +177,9 @@ test('a separate bot approval needs the completed publication on the same HEAD',
 
 test('blank clean approvals require trusted reviewed coverage of the exact current HEAD', () => {
   const comment = {
-    user: { login: 'coderabbitai[bot]', type: 'Bot' },
+    author: { login: 'coderabbitai', __typename: 'Bot' },
+    editor: null,
+    lastEditedAt: null,
     body:
       '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n' +
       '<!-- final_review_risk_start -->\n' +
@@ -185,9 +187,29 @@ test('blank clean approvals require trusted reviewed coverage of the exact curre
       '<!-- final_review_risk_end -->',
   };
   assert.equal(hasReviewedWalkthrough([comment], head), true);
+  assert.equal(
+    hasReviewedWalkthrough(
+      [
+        {
+          ...comment,
+          editor: { login: 'coderabbitai', __typename: 'Bot' },
+          lastEditedAt: '2026-10-20T00:00:00Z',
+        },
+      ],
+      head,
+    ),
+    true,
+  );
   for (const altered of [
-    { ...comment, user: { ...comment.user, type: 'User' } },
-    { ...comment, user: { login: 'another-bot', type: 'Bot' } },
+    { ...comment, author: { ...comment.author, __typename: 'User' } },
+    { ...comment, author: { login: 'another-bot', __typename: 'Bot' } },
+    {
+      ...comment,
+      editor: { login: 'maintainer', __typename: 'User' },
+      lastEditedAt: '2026-10-20T00:00:00Z',
+    },
+    { ...comment, editor: undefined },
+    { ...comment, editor: null, lastEditedAt: '2026-10-20T00:00:00Z' },
     { ...comment, body: comment.body.replaceAll(head, base) },
     {
       ...comment,
@@ -330,6 +352,34 @@ test('workflow only runs trusted main with read-only permissions and no candidat
     workflow,
     /: write|secrets\.|npm ci|download-artifact|pull_request\.head/,
   );
+});
+
+test('GraphQL walkthrough collection preserves editor provenance and rejects truncated evidence', async () => {
+  const comment = {
+    body: 'fixture',
+    author: { login: 'coderabbitai', __typename: 'Bot' },
+    editor: { login: 'maintainer', __typename: 'User' },
+    lastEditedAt: '2026-10-20T00:00:00Z',
+  };
+  for (const truncated of [false, true]) {
+    const client = githubReader('fixture', async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          repository: {
+            pullRequest: {
+              comments: {
+                nodes: [comment],
+                pageInfo: { hasNextPage: truncated },
+              },
+            },
+          },
+        },
+      }),
+    }));
+    const native = await client.native(policy.repository, 7);
+    assert.deepEqual(native.walkthroughs, truncated ? [] : [comment]);
+  }
 });
 
 test('CLI prints a safe failure reason before any API access on an untrusted ref', () => {

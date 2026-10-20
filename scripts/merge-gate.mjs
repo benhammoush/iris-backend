@@ -5,8 +5,15 @@ import { pathToFileURL } from 'node:url';
 export function hasReviewedWalkthrough(comments, head) {
   return (comments ?? []).some((comment) => {
     if (
-      comment.user?.login !== 'coderabbitai[bot]' ||
-      comment.user?.type !== 'Bot' ||
+      comment.author?.login !== 'coderabbitai' ||
+      comment.author?.__typename !== 'Bot' ||
+      !Object.hasOwn(comment, 'editor') ||
+      !Object.hasOwn(comment, 'lastEditedAt') ||
+      !(
+        (comment.editor === null && comment.lastEditedAt === null) ||
+        (comment.editor?.login === 'coderabbitai' &&
+          comment.editor?.__typename === 'Bot')
+      ) ||
       !comment.body?.startsWith(
         '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->',
       )
@@ -181,7 +188,7 @@ async function collect(client, pr, policy) {
   const number = pr.number;
   const sha = pr.head?.sha;
   if (!/^[0-9a-f]{40}$/.test(sha ?? '')) throw new Error('Invalid HEAD');
-  const [runs, reviews, status, native, walkthroughs] = await Promise.all([
+  const [runs, reviews, status, native] = await Promise.all([
     list(
       client,
       `${root}/actions/workflows/${policy.workflow}/runs?event=pull_request&head_sha=${sha}`,
@@ -190,7 +197,6 @@ async function collect(client, pr, policy) {
     list(client, `${root}/pulls/${number}/reviews`),
     client.get(`${root}/commits/${sha}/status`),
     client.native(policy.repository, number),
-    list(client, `${root}/issues/${number}/comments`),
   ]);
   const run = runs
     .filter(
@@ -206,7 +212,14 @@ async function collect(client, pr, policy) {
         'jobs',
       )
     : [];
-  return { native, run, jobs, reviews, status, walkthroughs };
+  return {
+    native,
+    run,
+    jobs,
+    reviews,
+    status,
+    walkthroughs: native?.walkthroughs ?? [],
+  };
 }
 
 /** Report only stable, current candidate/base and mutable evidence snapshots. */
@@ -259,10 +272,17 @@ export function githubReader(token, fetcher = fetch) {
     native: async (repository, number) => {
       const [owner, name] = repository.split('/');
       const response = await request('/graphql', {
-        query: `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid baseRefOid mergeStateStatus reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`,
+        query: `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid baseRefOid mergeStateStatus comments(first:100){nodes{body author{login __typename} editor{login __typename} lastEditedAt} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`,
         variables: { owner, name, number },
       });
-      return response.data?.repository?.pullRequest;
+      const pr = response.data?.repository?.pullRequest;
+      return {
+        ...pr,
+        walkthroughs:
+          pr?.comments?.pageInfo?.hasNextPage === false
+            ? pr.comments.nodes
+            : [],
+      };
     },
   };
 }
