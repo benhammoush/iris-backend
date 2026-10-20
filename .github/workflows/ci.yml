@@ -62,6 +62,7 @@ jobs:
       - run: npm run check:types
       - run: npm run lint:openapi
       - run: npm test
+      - run: npm run test:merge-policy
       - run: npm run check
 
   deploy:

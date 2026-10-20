@@ -1,0 +1,255 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { evaluate, observe, githubReader, candidates } from './merge-gate.mjs';
+
+const policy = JSON.parse(
+  readFileSync(new URL('../.github/merge-policy.json', import.meta.url)),
+);
+const head = 'a'.repeat(40),
+  base = 'b'.repeat(40);
+function fixture() {
+  const pr = {
+    number: 7,
+    state: 'open',
+    draft: false,
+    head: { sha: head, repo: { full_name: policy.repository } },
+    base: { sha: base, ref: 'main', repo: { full_name: policy.repository } },
+  };
+  return {
+    pr,
+    final: structuredClone(pr),
+    native: {
+      headRefOid: head,
+      baseRefOid: base,
+      mergeStateStatus: 'CLEAN',
+      reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
+    },
+    run: {
+      id: 1,
+      run_attempt: 1,
+      head_sha: head,
+      event: 'pull_request',
+      path: '.github/workflows/ci.yml',
+      status: 'completed',
+      conclusion: 'success',
+      pull_requests: [{ number: 7, head: { sha: head }, base: { sha: base } }],
+    },
+    jobs: policy.jobs.map((name) => ({
+      name,
+      status: 'completed',
+      conclusion: 'success',
+    })),
+    reviews: [
+      {
+        id: 1,
+        user: { login: 'coderabbitai[bot]', type: 'Bot' },
+        commit_id: head,
+        state: 'COMMENTED',
+        body: '<!-- coderabbit-review-publication v1 fixture -->',
+      },
+    ],
+    status: {
+      sha: head,
+      statuses: [
+        {
+          context: 'CodeRabbit',
+          state: 'success',
+          description: 'Review completed',
+        },
+      ],
+    },
+  };
+}
+
+test('complete evidence is ready only for a human merge, never automatic authorization', () => {
+  const result = evaluate(fixture(), policy);
+  assert.equal(result.readyForHumanMerge, true);
+  assert.equal(result.canMerge, false);
+  assert.equal(result.authorization, 'manual-only');
+  assert.throws(() => evaluate(fixture(), { ...policy, mode: 'auto' }));
+});
+
+test('missing, stale, conflicting and hostile evidence fails closed', () => {
+  for (const change of [
+    (v) => {
+      v.pr.draft = true;
+    },
+    (v) => {
+      v.pr.head.repo.full_name = 'other/fork';
+    },
+    (v) => {
+      v.final.head.sha = base;
+    },
+    (v) => {
+      v.final.base.sha = head;
+    },
+    (v) => {
+      v.final.state = 'closed';
+    },
+    (v) => {
+      v.native.mergeStateStatus = 'UNKNOWN';
+    },
+    (v) => {
+      v.native.reviewThreads.pageInfo.hasNextPage = true;
+    },
+    (v) => {
+      v.native.reviewThreads.nodes = [{ isResolved: false }];
+    },
+    (v) => {
+      v.jobs = [];
+    },
+    (v) => {
+      v.jobs.push(v.jobs[0]);
+    },
+    (v) => {
+      v.jobs[0].conclusion = 'skipped';
+    },
+    (v) => {
+      v.run.event = 'push';
+    },
+    (v) => {
+      v.run.head_sha = base;
+    },
+    (v) => {
+      v.run.path = '.github/workflows/fake.yml';
+    },
+    (v) => {
+      v.run.pull_requests[0].base.sha = head;
+    },
+    (v) => {
+      v.evidenceChanged = true;
+    },
+    (v) => {
+      v.reviews[0].commit_id = base;
+    },
+    (v) => {
+      v.reviews[0].body = 'Approved';
+    },
+    (v) => {
+      v.reviews[0].body += ' review skipped';
+    },
+    (v) => {
+      v.status.statuses = [];
+    },
+    (v) => {
+      v.reviews.push({
+        id: 2,
+        user: { login: 'owner' },
+        state: 'CHANGES_REQUESTED',
+      });
+    },
+  ]) {
+    const value = fixture();
+    change(value);
+    assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+  }
+});
+
+test('collector checks a complete current candidate and detects mid-read pushes', async () => {
+  for (const race of [false, true]) {
+    const value = fixture();
+    let reads = 0;
+    const client = {
+      native: async () => value.native,
+      get: async (path) => {
+        if (path.endsWith('/pulls/7'))
+          return ++reads > 1 && race
+            ? { ...value.pr, head: { ...value.pr.head, sha: base } }
+            : value.pr;
+        if (path.includes('/workflows/ci.yml/runs?'))
+          return { workflow_runs: [value.run] };
+        if (path.includes('/runs/1/jobs?')) return { jobs: value.jobs };
+        if (path.includes('/reviews?')) return value.reviews;
+        if (path.endsWith('/status')) return value.status;
+        throw new Error('Unexpected endpoint');
+      },
+    };
+    assert.equal((await observe(client, 7, policy)).readyForHumanMerge, !race);
+  }
+});
+
+test('same-head CI reruns, new reviews, statuses and conversations invalidate collected evidence', async () => {
+  for (const kind of ['rerun', 'review', 'status', 'thread']) {
+    const value = fixture();
+    let round = 0;
+    const changed = () => {
+      const copy = structuredClone(value);
+      if (round > 1) {
+        if (kind === 'rerun') {
+          copy.run.run_attempt = 2;
+          copy.run.status = 'in_progress';
+        }
+        if (kind === 'review')
+          copy.reviews.push({
+            id: 2,
+            user: { login: 'maintainer' },
+            state: 'CHANGES_REQUESTED',
+          });
+        if (kind === 'status') copy.status.statuses[0].state = 'pending';
+        if (kind === 'thread')
+          copy.native.reviewThreads.nodes.push({ isResolved: false });
+      }
+      return copy;
+    };
+    const client = {
+      native: async () => changed().native,
+      get: async (path) => {
+        if (path.endsWith('/pulls/7')) return structuredClone(value.pr);
+        if (path.includes('/workflows/ci.yml/runs?')) {
+          round++;
+          return { workflow_runs: [changed().run] };
+        }
+        if (path.includes('/runs/1/jobs?')) return { jobs: changed().jobs };
+        if (path.includes('/reviews?')) return changed().reviews;
+        if (path.endsWith('/status')) return changed().status;
+        throw new Error('Unexpected endpoint');
+      },
+    };
+    const report = await observe(client, 7, policy);
+    assert.equal(report.readyForHumanMerge, false, kind);
+    assert.ok(
+      report.reasons.some((reason) =>
+        reason.includes('changed during collection'),
+      ),
+      kind,
+    );
+  }
+});
+
+test('transport exposes reads and one fixed GraphQL query, with no write/retry/redirect', async () => {
+  const calls = [];
+  const client = githubReader('fixture', async (url, options) => {
+    calls.push({ url, ...options });
+    return {
+      ok: true,
+      json: async () => ({ data: { repository: { pullRequest: {} } } }),
+    };
+  });
+  await client.get(`/repos/${policy.repository}/pulls/7`);
+  await client.native(policy.repository, 7);
+  assert.deepEqual(
+    calls.map((v) => v.method),
+    ['GET', 'POST'],
+  );
+  assert.ok(calls.every((v) => v.redirect === 'error'));
+  assert.doesNotMatch(JSON.parse(calls[1].body).query, /mutation/);
+  assert.throws(() => client.get('/elsewhere'));
+  await assert.rejects(
+    candidates({ inputs: { pr: '7; bad' } }, client, policy),
+  );
+});
+
+test('workflow only runs trusted main with read-only permissions and no candidate installs', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/merge-eligibility.yml', import.meta.url),
+    'utf8',
+  );
+  assert.ok(workflow.includes("if: github.ref == 'refs/heads/main'"));
+  assert.ok(workflow.includes('ref: ${{ github.sha }}'));
+  assert.ok(workflow.includes('persist-credentials: false'));
+  assert.doesNotMatch(
+    workflow,
+    /: write|secrets\.|npm ci|download-artifact|pull_request\.head/,
+  );
+});
