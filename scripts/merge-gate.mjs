@@ -137,7 +137,7 @@ export function evaluate(value, policy) {
   if (!published && !hasReviewedWalkthrough(value.walkthroughs, sha))
     reasons.push('No recognized completed CodeRabbit review of this HEAD');
   const approval = botReviews.find((review) =>
-    ['APPROVED', 'CHANGES_REQUESTED'].includes(review.state),
+    ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state),
   );
   if (approval?.state !== 'APPROVED')
     reasons.push('CodeRabbit has not approved this HEAD');

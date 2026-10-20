@@ -93,6 +93,14 @@ test('matching completion text from another creator cannot substitute for CodeRa
   }
 });
 
+test('a later dismissed bot review holds until a new current-head approval', () => {
+  const value = fixture();
+  value.reviews.push({ ...value.reviews[0], id: 2, state: 'DISMISSED' });
+  assert.equal(evaluate(value, policy).readyForHumanMerge, false);
+  value.reviews.push({ ...value.reviews[0], id: 3 });
+  assert.equal(evaluate(value, policy).readyForHumanMerge, true);
+});
+
 test('workflow path revision suffix does not replace independent identity checks', () => {
   const value = fixture();
   value.run.path += '@refs/pull/8/merge';
