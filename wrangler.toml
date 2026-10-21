@@ -32,6 +32,7 @@ preview_urls = false
 
 [env.dev.vars]
 CORS_ORIGINS = "https://iris-frontend-dev.vercel.app,http://localhost:5173"
+RETAIN_STALE_MARKET_DATA = "true"
 
 [[env.dev.kv_namespaces]]
 binding = "SNAPSHOTS"

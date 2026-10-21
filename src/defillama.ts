@@ -12,7 +12,7 @@ export interface DefiLlamaCache {
   put?: (
     key: string,
     value: string,
-    options: { expirationTtl: number },
+    options: { expirationTtl?: number },
   ) => Promise<unknown>;
 }
 
@@ -131,7 +131,11 @@ export function isUsableDefiLlamaDashboard(
   );
 }
 
-async function defiLlamaWork(kv?: DefiLlamaCache | null, now = new Date()) {
+async function defiLlamaWork(
+  kv: DefiLlamaCache | null | undefined,
+  now: Date,
+  retainStale: boolean,
+) {
   const [dexPayload, protocolPayload] = await Promise.all([
     providerJson(
       `${DEFILLAMA}/overview/dexs/Solana?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true`,
@@ -151,24 +155,30 @@ async function defiLlamaWork(kv?: DefiLlamaCache | null, now = new Date()) {
     protocols: protocolsFrom(protocolPayload),
   };
   if (kv?.put)
-    await kv.put(DEFILLAMA_DASHBOARD_KEY, JSON.stringify(dashboard), {
-      expirationTtl: Math.ceil(STALE_AFTER_MS / 1000),
-    });
+    await kv.put(
+      DEFILLAMA_DASHBOARD_KEY,
+      JSON.stringify(dashboard),
+      retainStale ? {} : { expirationTtl: Math.ceil(STALE_AFTER_MS / 1000) },
+    );
   return dashboard;
 }
 
 export function refreshDefiLlamaDashboard(
   kv?: DefiLlamaCache | null,
   now = new Date(),
+  retainStale = false,
 ) {
-  return singleFlight(kv, ['defillama-refresh'], () =>
-    refreshDiagnostic('defillama-refresh', () => defiLlamaWork(kv, now)),
+  return singleFlight(kv, ['defillama-refresh', retainStale], () =>
+    refreshDiagnostic('defillama-refresh', () =>
+      defiLlamaWork(kv, now, retainStale),
+    ),
   );
 }
 
 export async function loadDefiLlamaDashboard(
   kv?: DefiLlamaCache | null,
   now = Date.now(),
+  retainStale = false,
 ): Promise<{
   dashboard: CachedDefiLlamaDashboard | null;
   state: 'unavailable' | 'fresh' | 'stale';
@@ -179,7 +189,7 @@ export async function loadDefiLlamaDashboard(
   if (!isUsableDefiLlamaDashboard(cached))
     return { dashboard: null, state: 'unavailable' };
   const age = now - Date.parse(cached.fetchedAt);
-  if (age < 0 || age > STALE_AFTER_MS)
+  if (age < 0 || (!retainStale && age > STALE_AFTER_MS))
     return { dashboard: null, state: 'unavailable' };
   return {
     dashboard: cached,

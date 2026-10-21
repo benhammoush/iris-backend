@@ -142,9 +142,9 @@ flowchart LR
 1. Cloudflare Cron runs hourly, or CI calls authenticated `POST /internal/refresh` after deployment.
 2. `refreshSnapshot()` fetches Helius network metrics and configured reviewed-pool activity, then fetches the Jupiter market catalog and discovery lists.
 3. The Worker writes a complete `snapshot:v2:<timestamp>` record to KV.
-4. Versioned snapshots, Birdeye candle pages, and DefiLlama dashboard records expire after 24 hours; only after the versioned snapshot write succeeds, the Worker updates `snapshot:current`.
+4. Only after the versioned snapshot write succeeds, the Worker updates `snapshot:current`. Production versioned snapshots and DefiLlama dashboard records expire after 24 hours. Dev sets `RETAIN_STALE_MARKET_DATA=true`: these records have no storage expiry and remain readable past 24 hours, still labelled stale with their original timestamps. Dev retains versioned snapshot records without automatic pruning. Birdeye candle and other on-demand cache limits are unchanged.
 5. In parallel, best-effort refreshes update the Helius dashboard sample and DefiLlama dashboard. Their failure does not prevent core snapshot publication.
-6. A core refresh failure keeps the last complete snapshot. After the usable lifetime expires, routes fall back to the bundled fixture snapshot rather than inventing data.
+6. A core refresh failure keeps the last complete snapshot. Production falls back to the bundled fixture snapshot after the usable lifetime expires. Dev keeps its last valid market data; missing, malformed or future-dated records still fall back. This does not enable scheduled dev refresh or revive keys already deleted by KV expiry: one successful, separately authorized dev refresh is needed to populate retained records.
 
 ## Security Boundaries
 

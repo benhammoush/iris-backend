@@ -23,6 +23,7 @@ export interface WorkerVariables {
   JUPITER_API_KEY?: string;
   BIRDEYE_API_KEY?: string;
   PROVIDER_MODE?: string;
+  RETAIN_STALE_MARKET_DATA?: string;
 }
 
 export interface Env extends WorkerVariables {

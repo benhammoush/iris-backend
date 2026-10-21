@@ -10,7 +10,7 @@ test('refresh normalizes, filters, sorts, and caches Solana DefiLlama data', asy
   const originalFetch = globalThis.fetch;
   const writes = new Map<
     string,
-    { value: string; options: { expirationTtl: number } }
+    { value: string; options: { expirationTtl?: number } }
   >();
   globalThis.fetch = async (url) => {
     if (String(url).includes('/overview/dexs/Solana'))

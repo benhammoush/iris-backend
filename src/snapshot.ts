@@ -128,6 +128,7 @@ export function isUsableSnapshot(snapshot: unknown): snapshot is Snapshot {
 export async function resolveSnapshot(
   kv?: { get: (key: string, type: 'json') => Promise<unknown> } | null,
   now = Date.now(),
+  retainStale = false,
 ): Promise<{ snapshot: Snapshot; state: 'fixture' | 'fresh' | 'stale' }> {
   if (!kv) return { snapshot: FIXTURE_SNAPSHOT, state: 'fixture' };
   const pointer = record(await kv.get(SNAPSHOT_POINTER_KEY, 'json'));
@@ -137,7 +138,7 @@ export async function resolveSnapshot(
   if (!isUsableSnapshot(snapshot))
     return { snapshot: FIXTURE_SNAPSHOT, state: 'fixture' };
   const age = now - Date.parse(snapshot.createdAt);
-  if (age < 0 || age > STALE_AFTER_MS)
+  if (age < 0 || (!retainStale && age > STALE_AFTER_MS))
     return { snapshot: FIXTURE_SNAPSHOT, state: 'fixture' };
   return {
     snapshot,
@@ -436,7 +437,12 @@ async function walletDataWork(env: Env, config: WorkerConfig, address: string) {
 
 async function snapshotWork(env: Env, config: WorkerConfig, now = new Date()) {
   const apiKey = config.heliusApiKey || env.HELIUS_API_KEY;
-  const existing = await resolveSnapshot(env.SNAPSHOTS, now.getTime());
+  const retainStale = env.RETAIN_STALE_MARKET_DATA === 'true';
+  const existing = await resolveSnapshot(
+    env.SNAPSHOTS,
+    now.getTime(),
+    retainStale,
+  );
   if (!apiKey)
     return existing.state === 'fixture' ? FIXTURE_SNAPSHOT : existing.snapshot;
   const [trackedPoolResult, network] = await Promise.all([
@@ -500,9 +506,11 @@ async function snapshotWork(env: Env, config: WorkerConfig, now = new Date()) {
     swaps,
   };
   const key = `${SNAPSHOT_KEY_PREFIX}${now.getTime()}`;
-  await env.SNAPSHOTS.put(key, JSON.stringify(snapshot), {
-    expirationTtl: Math.ceil(STALE_AFTER_MS / 1000),
-  });
+  await env.SNAPSHOTS.put(
+    key,
+    JSON.stringify(snapshot),
+    retainStale ? {} : { expirationTtl: Math.ceil(STALE_AFTER_MS / 1000) },
+  );
   await env.SNAPSHOTS.put(
     SNAPSHOT_POINTER_KEY,
     JSON.stringify({ key, createdAt: snapshot.createdAt }),
@@ -529,7 +537,11 @@ export function refreshSnapshot(
 ) {
   return singleFlight(
     env.SNAPSHOTS ?? env,
-    ['snapshot-refresh', ...providerKey(env, config)],
+    [
+      'snapshot-refresh',
+      ...providerKey(env, config),
+      env.RETAIN_STALE_MARKET_DATA === 'true',
+    ],
     () =>
       refreshDiagnostic('snapshot-refresh', () =>
         snapshotWork(env, config, now),
