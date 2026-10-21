@@ -24,3 +24,15 @@ it does not sign transactions or move funds.
 
 The [OpenAPI contract](openapi.yaml) defines the endpoints, and
 [ARCHITECTURE.md](ARCHITECTURE.md) describes the request and cache flows.
+
+## Local development and checks
+
+Run `npm ci` and `npm run dev` to start the local Worker on port 8787. Its default
+local KV is separate from hosted storage. From the frontend repository, configure
+`VITE_API_BASE=http://localhost:8787` to use it. See the frontend's
+[environment runbook](https://github.com/benhammoush/iris-frontend/blob/main/ENVIRONMENTS.md)
+before changing hosted environments or releasing.
+
+Run `npm run check` for the complete Worker gate: lint and formatting, tooling,
+dependency audit, version and type checks, OpenAPI lint, tests and production
+bundle dry-run. The bundle step does not deploy the Worker.

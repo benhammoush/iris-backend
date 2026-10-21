@@ -162,12 +162,12 @@ flowchart LR
 ### Frontend repository: `iris-frontend`
 
 - `src/index.tsx` - React bootstrap and theme restore.
-- `src/App.js` - provider tree and route definitions.
+- `src/App.tsx` - provider tree, route definitions and focus restoration.
 - `src/api/client.ts` - HTTP envelope, timeout, and error behavior.
-- `src/api/worker.js` - Worker route methods and controlled fixture fallback.
-- `src/hooks/useWorkerResource.js` - component request lifecycle.
-- `src/contexts/CatalogContext.js` - catalog resource.
-- `src/contexts/HeliusDashboardContext.js` - 60-second visible-tab network/transaction resource.
+- `src/api/worker.ts` - Worker route methods and controlled fixture fallback.
+- `src/hooks/useWorkerResource.ts` - component request lifecycle.
+- `src/contexts/CatalogContext.tsx` - catalog resource.
+- `src/contexts/HeliusDashboardContext.tsx` - visible-tab network/transaction resource.
 - `src/components/Asset.tsx` - market, candles, and Helius token-intelligence composition.
 
 ### Worker repository: `iris-backend`
@@ -181,3 +181,13 @@ flowchart LR
 - `src/network.ts` - Helius network-metric calculation.
 - `src/defillama.ts` - independently cached DeFi analytics.
 - `src/constants.ts` - cache keys, TTLs, page sizes, and supported limits.
+
+## Operator documentation
+
+The frontend repository owns the [environment and release runbook](https://github.com/benhammoush/iris-frontend/blob/main/ENVIRONMENTS.md)
+and its dated [release evidence](https://github.com/benhammoush/iris-frontend/blob/main/RELEASE-NOTES.md).
+This architecture is a source-level description, not a live inventory or proof
+of deployed configuration. The runbook's [old-infrastructure retirement
+section](https://github.com/benhammoush/iris-frontend/blob/main/ENVIRONMENTS.md#old-infrastructure-retirement)
+tracks the separate provider/resource retirement work; this document does not
+authorize that work.
