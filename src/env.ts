@@ -1,6 +1,8 @@
 import type {
   KVNamespace,
   KVNamespacePutOptions,
+  D1Database,
+  RateLimit,
 } from '@cloudflare/workers-types';
 
 // JSON/string operations consumed by Iris; a Cloudflare KVNamespace implements this surface.
@@ -24,9 +26,15 @@ export interface WorkerVariables {
   BIRDEYE_API_KEY?: string;
   PROVIDER_MODE?: string;
   RETAIN_STALE_MARKET_DATA?: string;
+  WATCHLIST_ENABLED?: string;
+  FIREBASE_PROJECT_ID?: string;
+  FIREBASE_CLIENT_EMAIL?: string;
+  FIREBASE_PRIVATE_KEY?: string;
 }
 
 export interface Env extends WorkerVariables {
   SNAPSHOTS: CloudflareSnapshotStore;
   REFRESH_TOKEN?: string;
+  WATCHLIST_DB?: D1Database;
+  WATCHLIST_RATE_LIMITER?: RateLimit;
 }

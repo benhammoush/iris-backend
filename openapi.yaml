@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Iris API
-  version: 3.15.8
+  version: 3.16.0
   license:
     name: ISC
     identifier: ISC
@@ -29,11 +29,80 @@ tags:
     description: Sampled and paginated transaction data.
   - name: Internal
     description: Operator-only refresh operation.
+  - name: Watchlists
+    description: Private Firebase-authenticated saved references. Disabled until isolated auth, D1 and rate-limit setup is approved.
   - name: Legacy v1
     description: Deprecated compatibility surface; use v3 instead.
   - name: Legacy v2
     description: Deprecated compatibility surface; use v3 instead.
 paths:
+  /v3/me/watchlist:
+    get:
+      operationId: getPrivateWatchlist
+      tags: [Watchlists]
+      security: [{ firebaseIdToken: [] }]
+      description: Returns only the verified user's saved references; never fetches wallet balances or market providers. No query parameters or request body accepted.
+      responses:
+        '200':
+          description: Private saved references, newest first within each section.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WatchlistEnvelope' }
+        '401': { $ref: '#/components/responses/PrivateFailure' }
+        '403': { $ref: '#/components/responses/PrivateFailure' }
+        '429': { $ref: '#/components/responses/PrivateFailure' }
+        '503': { $ref: '#/components/responses/PrivateFailure' }
+        '400': { $ref: '#/components/responses/PrivateFailure' }
+  /v3/me/watchlist/{kind}/{address}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        schema: { type: string, enum: [asset, wallet] }
+      - name: address
+        in: path
+        required: true
+        description: Case-sensitive Base58 public key decoding to exactly 32 bytes.
+        schema:
+          {
+            type: string,
+            minLength: 32,
+            maxLength: 44,
+            pattern: '^[1-9A-HJ-NP-Za-km-z]+$',
+          }
+    put:
+      operationId: savePrivateWatchlistItem
+      tags: [Watchlists]
+      security: [{ firebaseIdToken: [] }]
+      description: Empty body only. Save one reference; duplicate saves preserve the original timestamp even at the 100-per-kind limit. Ownership always comes from the verified token.
+      responses:
+        '200':
+          description: Newly saved or previously saved reference.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WatchlistSaveEnvelope' }
+        '400': { $ref: '#/components/responses/PrivateFailure' }
+        '401': { $ref: '#/components/responses/PrivateFailure' }
+        '403': { $ref: '#/components/responses/PrivateFailure' }
+        '409': { $ref: '#/components/responses/PrivateFailure' }
+        '429': { $ref: '#/components/responses/PrivateFailure' }
+        '503': { $ref: '#/components/responses/PrivateFailure' }
+    delete:
+      operationId: removePrivateWatchlistItem
+      tags: [Watchlists]
+      security: [{ firebaseIdToken: [] }]
+      description: Empty body only. Permanently remove the verified user's reference; already absent is also successful.
+      responses:
+        '200':
+          description: Reference is absent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WatchlistRemoveEnvelope' }
+        '400': { $ref: '#/components/responses/PrivateFailure' }
+        '401': { $ref: '#/components/responses/PrivateFailure' }
+        '403': { $ref: '#/components/responses/PrivateFailure' }
+        '429': { $ref: '#/components/responses/PrivateFailure' }
+        '503': { $ref: '#/components/responses/PrivateFailure' }
   /health:
     get:
       operationId: getHealth
@@ -568,6 +637,18 @@ components:
     CacheControl:
       { description: Route-specific cache policy., schema: { type: string } }
   responses:
+    PrivateFailure:
+      description: >-
+        Sanitized error. AUTH_REQUIRED/AUTH_INVALID (401), EMAIL_VERIFICATION_REQUIRED/ACCOUNT_DELETING (403),
+        INVALID_WATCHLIST_ITEM (400), WATCHLIST_LIMIT_REACHED (409), RATE_LIMITED (429),
+        AUTH_UNAVAILABLE/WATCHLIST_UNAVAILABLE (503). Private responses are never cached.
+      headers:
+        Retry-After:
+          description: Present for rate-limit errors, in seconds.
+          schema: { type: integer, example: 60 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
     Envelope:
       description: Successful JSON envelope.
       headers:
@@ -817,6 +898,58 @@ components:
           },
       }
   schemas:
+    WatchlistItem:
+      type: object
+      additionalProperties: false
+      required: [address, savedAt]
+      properties:
+        address: { type: string }
+        savedAt: { type: string, format: date-time }
+    WatchlistEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          additionalProperties: false
+          required: [assets, wallets]
+          properties:
+            assets:
+              type: array
+              maxItems: 100
+              items: { $ref: '#/components/schemas/WatchlistItem' }
+            wallets:
+              type: array
+              maxItems: 100
+              items: { $ref: '#/components/schemas/WatchlistItem' }
+    WatchlistSaveEnvelope:
+      type: object
+      required: [data, meta]
+      additionalProperties: false
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          additionalProperties: false
+          required: [kind, address, savedAt]
+          properties:
+            kind: { type: string, enum: [asset, wallet] }
+            address: { type: string }
+            savedAt: { type: string, format: date-time }
+    WatchlistRemoveEnvelope:
+      type: object
+      required: [data, meta]
+      additionalProperties: false
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          additionalProperties: false
+          required: [removed]
+          properties:
+            removed: { type: boolean, const: true }
     Envelope:
       type: object
       required: [data, meta]
@@ -1770,4 +1903,9 @@ components:
                             amount: { type: [string, 'null'] }
                             decimals: { type: integer }
   securitySchemes:
+    firebaseIdToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID token for this environment's project; requires current verified email and non-disabled, non-revoked account.
     refreshToken: { type: http, scheme: bearer }

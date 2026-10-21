@@ -4,7 +4,9 @@ compatibility_date = "2026-10-02"
 
 [observability.logs]
 enabled = true
-invocation_logs = true
+# Automatic invocation URLs would expose saved addresses on private routes.
+# Keep the application's sanitized structured diagnostics instead.
+invocation_logs = false
 
 [vars]
 CORS_ORIGINS = ""

@@ -103,6 +103,19 @@ flowchart TB
 
 ## Worker Route, Cache, And Failure Flow
 
+### Private watchlists
+
+`/v3/me/watchlist` and its item PUT/DELETE routes are separate from public
+market/wallet reads and operator refresh. They require explicit enablement, D1,
+a rate-limit binding, verified Firebase ID tokens and current account-status
+checks. Owner-scoped D1 constraints enforce uniqueness, capacity and deletion
+state; private data never enters market KV or shared caches. Automatic invocation
+URL logs are disabled to avoid exposing saved addresses. No hosted setup or
+feature activation is implied. See [WATCHLISTS.md](./WATCHLISTS.md) for the
+contract, configuration, local test evidence and remaining lifecycle gates.
+
+### Public data
+
 ```mermaid
 flowchart LR
   Request["Public GET /v3 request"] --> Validate["Validate method, origin, route, Base58 ID, query"]
