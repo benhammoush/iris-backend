@@ -19,7 +19,8 @@
     "check:types": "tsc --noEmit",
     "check:versions": "node scripts/check-version.mjs",
     "lint:openapi": "node scripts/lint-openapi.mjs openapi.yaml",
-    "check": "wrangler deploy --dry-run --env production"
+    "build": "wrangler deploy --dry-run --env production",
+    "check": "npm run lint && npm run format:check && npm run check:tooling && npm run audit:dependencies && npm run check:versions && npm run check:types && npm run lint:openapi && npm test && npm run test:merge-policy && npm run build"
   },
   "license": "ISC",
   "devDependencies": {

@@ -54,15 +54,6 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm run check:tooling
-      - run: npm run audit:dependencies
-      - run: npm run check:versions
-      - run: npm run check:types
-      - run: npm run lint:openapi
-      - run: npm test
-      - run: npm run test:merge-policy
       - run: npm run check
 
   deploy:
