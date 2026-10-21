@@ -33,7 +33,11 @@ async function refreshHeliusDashboardBackstop(env: Env, config: WorkerConfig) {
 
 async function refreshDefiLlamaBackstop(env: Env) {
   try {
-    await refreshDefiLlamaDashboard(env.SNAPSHOTS);
+    await refreshDefiLlamaDashboard(
+      env.SNAPSHOTS,
+      new Date(),
+      env.RETAIN_STALE_MARKET_DATA === 'true',
+    );
   } catch (cause) {
     // DefiLlama is an optional dashboard source and must not block core snapshots.
     unavailable('defillama-refresh', 'DefiLlama', cause);

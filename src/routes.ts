@@ -296,6 +296,7 @@ export async function route(
   origin?: string | null,
 ): Promise<Response> {
   const url = new URL(request.url);
+  const retainStale = env.RETAIN_STALE_MARKET_DATA === 'true';
   if (url.pathname === '/health')
     return json(
       { data: { status: 'ok', version: API_VERSION }, meta: { requestId: id } },
@@ -313,7 +314,11 @@ export async function route(
         origin,
       );
     try {
-      const { snapshot, state } = await resolveSnapshot(env.SNAPSHOTS);
+      const { snapshot, state } = await resolveSnapshot(
+        env.SNAPSHOTS,
+        Date.now(),
+        retainStale,
+      );
       if (!isUsableSnapshot(snapshot))
         return error(
           'NOT_READY',
@@ -342,7 +347,11 @@ export async function route(
       );
     }
   }
-  const { snapshot, state } = await resolveSnapshot(env.SNAPSHOTS);
+  const { snapshot, state } = await resolveSnapshot(
+    env.SNAPSHOTS,
+    Date.now(),
+    retainStale,
+  );
   const meta = {
     requestId: id,
     snapshotState: state,
@@ -451,6 +460,8 @@ export async function route(
   if (url.pathname === '/v3/defillama') {
     const { dashboard, state: freshness } = await loadDefiLlamaDashboard(
       env.SNAPSHOTS,
+      Date.now(),
+      retainStale,
     );
     const data = dashboard || {
       source: 'defillama',
