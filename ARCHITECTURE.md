@@ -8,13 +8,13 @@ flowchart TB
 
   subgraph Frontend["Iris Public - React 18 / Vite / Vercel"]
     Bootstrap["src/index.tsx\nTheme restore + BrowserRouter"]
-    App["src/App.js\nThemeProvider\nCatalogProvider\nHeliusDashboardProvider"]
+    App["src/App.tsx\nThemeProvider\nCatalogProvider\nHeliusDashboardProvider"]
     Router["Routes\n/ Home\n/assets Catalog\n/wallets Catalog\n/asset/:mint Asset\n/wallet/:address Wallet"]
     Views["Page components\nHome, Catalog, Asset, Wallet\nNavbar, DataStatus"]
     AssetView["Asset intelligence view\nJupiter metrics\nBirdeye candles\nHelius profile + mint history + largest accounts"]
     Contexts["Global resources\nCatalog: /v3/assets\nHelius dashboard: /v3/transactions/recent?limit=15\n60-second visible-tab polling"]
     Hook["useWorkerResource\nAbort obsolete request\nKeep prior data while refreshing"]
-    WorkerApi["src/api/worker.js\nCanonical Worker route methods"]
+    WorkerApi["src/api/worker.ts\nCanonical Worker route methods"]
     Client["src/api/client.ts\nVITE_API_BASE\nX-Request-Id\n10s timeout\n{ data, meta } validation\nApiError normalization"]
     Fixtures["Emergency display fixtures\nOnly VITE_ENABLE_FIXTURES=true\nNever for wallets/on-chain/holders"]
   end

@@ -34,5 +34,6 @@ local KV is separate from hosted storage. From the frontend repository, configur
 before changing hosted environments or releasing.
 
 Run `npm run check` for the complete Worker gate: lint and formatting, tooling,
-dependency audit, version and type checks, OpenAPI lint, tests and production
-bundle dry-run. The bundle step does not deploy the Worker.
+dependency audit, version and type checks, OpenAPI lint, unit and merge-policy
+tests, and a production bundle dry-run. The bundle step does not deploy the
+Worker.
