@@ -7,11 +7,13 @@ import { refreshDefiLlamaDashboard } from './defillama.ts';
 import type { Env } from './env.ts';
 import { errorMessage } from './record.ts';
 import { diagnostic, unavailable, refreshDiagnostic } from './diagnostics.ts';
+import { watchlistRoute } from './watchlists.ts';
 
 interface WorkerRequest {
   url: string;
   method: string;
   headers: { get: (name: string) => string | null };
+  body?: ReadableStream<Uint8Array> | null;
 }
 
 function allowedOrigin(
@@ -61,11 +63,14 @@ const worker = {
     if (request.headers.get('origin') && !origin)
       return error('CORS_ORIGIN_DENIED', 'Origin is not allowed.', 403, id);
     if (request.method === 'OPTIONS') {
+      const privatePath = new URL(request.url).pathname.startsWith('/v3/me/');
       return new Response(null, {
         status: 204,
         headers: {
           'access-control-allow-origin': String(origin),
-          'access-control-allow-methods': 'GET, POST, OPTIONS',
+          'access-control-allow-methods': privatePath
+            ? 'GET, PUT, DELETE, OPTIONS'
+            : 'GET, POST, OPTIONS',
           'access-control-allow-headers':
             'content-type, x-request-id, authorization',
           'access-control-max-age': '86400',
@@ -120,6 +125,8 @@ const worker = {
         );
       }
     }
+    if (new URL(request.url).pathname.startsWith('/v3/me/'))
+      return watchlistRoute(request, env, id, origin);
     if (request.method !== 'GET')
       return error(
         'METHOD_NOT_ALLOWED',

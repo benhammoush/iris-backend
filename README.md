@@ -25,6 +25,10 @@ it does not sign transactions or move funds.
 The [OpenAPI contract](openapi.yaml) defines the endpoints, and
 [ARCHITECTURE.md](ARCHITECTURE.md) describes the request and cache flows.
 
+[Private watchlists](WATCHLISTS.md) have a local Worker API and D1 migration,
+disabled by default. Browser accounts, permanent account deletion and hosted
+setup/acceptance remain separate work; public browsing does not require login.
+
 ## Local development and checks
 
 Run `npm ci` and `npm run dev` to start the local Worker on port 8787. Its default
