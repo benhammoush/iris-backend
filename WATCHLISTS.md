@@ -270,9 +270,44 @@ and account quotas before setup. Illustratively, 100 users loading 200 reference
 indexes, cleanup and abuse; this is not a measured bill or capacity guarantee.
 There is no usage forecast yet. Keep no-billing setup unless separately approved;
 quota exhaustion must degrade private features without breaking public browsing.
-Automatic wallet summaries add up to 100 public wallet reads per page refresh;
-bound concurrency and stop queued work on throttling/outage. Their Helius quota
-and logging/privacy implications need WL-O1 acceptance before hosted activation.
+Automatic wallet summaries add up to 100 public Worker wallet reads per page
+refresh, not 100 provider calls. Current uncached `walletWork` permits one Helius
+read and up to 40 distinct Jupiter mint lookups per wallet. Each read can attempt
+twice, so the worst-case request budgets are **2 Helius + 80 Jupiter attempts per
+wallet**, or **200 Helius + 8,000 Jupiter attempts per 100-wallet refresh**. Cache
+hits/single-flight may reduce usage; they are not a guaranteed quota reduction.
+Four concurrent wallet reads nominally schedule four Helius or 20 Jupiter requests
+in flight per page, not a global limit. Twenty is not a guaranteed failure-path
+ceiling: `mapWithConcurrency` can reject before its other mint workers finish,
+and `refreshMarket` can return a partial wallet while those workers continue. The
+next wallet can then overlap surviving enrichment work. Activation acceptance must
+bound that overlap by cancelling or draining failed enrichment before releasing
+its scheduling slot, rather than treating nominal concurrency as enforced usage.
+The attempt ceilings above are not accepted hosted allowances. Before activation,
+WL-O1 must approve explicit per-provider attempt budgets per refresh and shared
+rate limits against actual account quotas, counting retries and mint fanout;
+enforcement must stop before spending an exhausted budget. Repeated focus/manual
+refreshes and multiple users/tabs also consume those shared budgets.
+
+Hosted activation additionally requires a typed provider stop signal to survive
+the Worker boundary, including partial wallet responses: identify the provider
+(`helius` or `jupiter`) and reason (`throttled`, `unavailable` or `budget-exhausted`).
+Propagate terminal 429, provider 5xx/network/timeout and budget exhaustion from
+`walletWork`/`refreshMarket`, and stop scheduling both queued mint enrichment and
+queued wallet reads on either provider's signal. Do not infer outage from missing
+prices alone; legitimate unpriced holdings remain usable partial results. Keep
+valid balances visible with a partial valuation when Jupiter fails, but do not
+swallow that provider failure as an ordinary success for queue scheduling.
+Already dispatched requests may finish within their bounds; no automatic new
+batch may bypass a stop signal or accepted shared budget. Provider signals must
+contain no credentials or raw upstream bodies.
+
+This documentation PR defines the acceptance requirement, not its implementation:
+today `refreshMarket` can swallow Jupiter failures and return a partial wallet
+without a typed stop signal. Existing frontend queue stopping covers surfaced
+Worker failures only. Provider budget enforcement and end-to-end stop propagation
+need separate implementation/acceptance before hosted activation. Helius/Jupiter
+quota and provider logging/privacy acceptance remain WL-O1 gates.
 
 ## Acceptance and handoff
 
