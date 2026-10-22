@@ -68,10 +68,17 @@ below are satisfied. WL-1 alone does not make permanent account deletion availab
 - Save/remove controls appear on asset and wallet detail pages. Removing is
   permanent; saving again creates a new timestamp. Pending/error states are
   visible and never silently report a failed mutation as successful.
-- Wallet rows show the address and link only: no balance/activity requests.
-  Asset rows may use the existing loaded public catalog for display metadata.
-  Unknown/unavailable assets remain address links; no additional provider calls
-  are required to list, save or remove references. Missing values are never zero.
+- Owner-approved WL-3 revision, 2026-10-22: wallet rows automatically load public
+  balance/holding summaries through the Worker, with at most four concurrent reads,
+  per-row loading/failure states and no activity requests until wallet detail entry.
+  This replaces the earlier address-only/no-wallet-provider-work rule. Asset rows
+  use the existing loaded Jupiter catalog. Owner-approved compact rows show asset
+  name/24h volume/price and wallet truncated address/returned holdings count/priced
+  subtotal; full addresses remain accessible through labels and detail links.
+  Use Jupiter/Helius branding when their data is displayed; wallet valuations may
+  include Jupiter pricing. Unknown assets remain address links. Missing values are
+  never zero; disclose partial valuation and truncated holdings. Reference API
+  reads/writes themselves remain independent of public-provider availability.
 - Cross-device updates appear on page entry, focus return and successful
   mutation; no realtime service, background polling or offline mutation queue.
 
@@ -263,6 +270,9 @@ and account quotas before setup. Illustratively, 100 users loading 200 reference
 indexes, cleanup and abuse; this is not a measured bill or capacity guarantee.
 There is no usage forecast yet. Keep no-billing setup unless separately approved;
 quota exhaustion must degrade private features without breaking public browsing.
+Automatic wallet summaries add up to 100 public wallet reads per page refresh;
+bound concurrency and stop queued work on throttling/outage. Their Helius quota
+and logging/privacy implications need WL-O1 acceptance before hosted activation.
 
 ## Acceptance and handoff
 
@@ -275,8 +285,9 @@ quota exhaustion must degrade private features without breaking public browsing.
   injection tests; concurrent duplicate/capacity/deletion tests; missing D1/auth
   configuration must not disable public APIs; production cannot accept emulators.
 - WL-2/3: verification/reset/linking flows; credential conflicts without UID/list
-  merging; explicit save after login; newest-first/limits; no provider work for
-  wallet rows; no stale responses after sign-out/account switch; keyboard/mobile
+  merging; explicit save after login; newest-first/limits; bounded automatic wallet
+  summaries with per-row failures, no wallet-activity reads and no stale responses
+  after sign-out/account switch; keyboard/mobile
   acceptance and preservation of anonymous browsing.
 - WL-4: permanent deletion, fresh authentication, status receipt constraints,
   commit failure, Firebase success + D1 completion failure, ambiguous timeout,
