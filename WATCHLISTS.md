@@ -68,10 +68,17 @@ below are satisfied. WL-1 alone does not make permanent account deletion availab
 - Save/remove controls appear on asset and wallet detail pages. Removing is
   permanent; saving again creates a new timestamp. Pending/error states are
   visible and never silently report a failed mutation as successful.
-- Wallet rows show the address and link only: no balance/activity requests.
-  Asset rows may use the existing loaded public catalog for display metadata.
-  Unknown/unavailable assets remain address links; no additional provider calls
-  are required to list, save or remove references. Missing values are never zero.
+- Owner-approved WL-3 revision, 2026-10-22: wallet rows automatically load public
+  balance/holding summaries through the Worker, with at most four concurrent reads,
+  per-row loading/failure states and no activity requests until wallet detail entry.
+  This replaces the earlier address-only/no-wallet-provider-work rule. Asset rows
+  use the existing loaded Jupiter catalog. Owner-approved compact rows show asset
+  name/24h volume/price and wallet truncated address/returned holdings count/priced
+  subtotal; full addresses remain accessible through labels and detail links.
+  Use Jupiter/Helius branding when their data is displayed; wallet valuations may
+  include Jupiter pricing. Unknown assets remain address links. Missing values are
+  never zero; disclose partial valuation and truncated holdings. Reference API
+  reads/writes themselves remain independent of public-provider availability.
 - Cross-device updates appear on page entry, focus return and successful
   mutation; no realtime service, background polling or offline mutation queue.
 
@@ -263,6 +270,44 @@ and account quotas before setup. Illustratively, 100 users loading 200 reference
 indexes, cleanup and abuse; this is not a measured bill or capacity guarantee.
 There is no usage forecast yet. Keep no-billing setup unless separately approved;
 quota exhaustion must degrade private features without breaking public browsing.
+Automatic wallet summaries add up to 100 public Worker wallet reads per page
+refresh, not 100 provider calls. Current uncached `walletWork` permits one Helius
+read and up to 40 distinct Jupiter mint lookups per wallet. Each read can attempt
+twice, so the worst-case request budgets are **2 Helius + 80 Jupiter attempts per
+wallet**, or **200 Helius + 8,000 Jupiter attempts per 100-wallet refresh**. Cache
+hits/single-flight may reduce usage; they are not a guaranteed quota reduction.
+Four concurrent wallet reads nominally schedule four Helius or 20 Jupiter requests
+in flight per page, not a global limit. Twenty is not a guaranteed failure-path
+ceiling: `mapWithConcurrency` can reject before its other mint workers finish,
+and `refreshMarket` can return a partial wallet while those workers continue. The
+next wallet can then overlap surviving enrichment work. Activation acceptance must
+bound that overlap by cancelling or draining failed enrichment before releasing
+its scheduling slot, rather than treating nominal concurrency as enforced usage.
+The attempt ceilings above are not accepted hosted allowances. Before activation,
+WL-O1 must approve explicit per-provider attempt budgets per refresh and shared
+rate limits against actual account quotas, counting retries and mint fanout;
+enforcement must stop before spending an exhausted budget. Repeated focus/manual
+refreshes and multiple users/tabs also consume those shared budgets.
+
+Hosted activation additionally requires a typed provider stop signal to survive
+the Worker boundary, including partial wallet responses: identify the provider
+(`helius` or `jupiter`) and reason (`throttled`, `unavailable` or `budget-exhausted`).
+Propagate terminal 429, provider 5xx/network/timeout and budget exhaustion from
+`walletWork`/`refreshMarket`, and stop scheduling both queued mint enrichment and
+queued wallet reads on either provider's signal. Do not infer outage from missing
+prices alone; legitimate unpriced holdings remain usable partial results. Keep
+valid balances visible with a partial valuation when Jupiter fails, but do not
+swallow that provider failure as an ordinary success for queue scheduling.
+Already dispatched requests may finish within their bounds; no automatic new
+batch may bypass a stop signal or accepted shared budget. Provider signals must
+contain no credentials or raw upstream bodies.
+
+This documentation PR defines the acceptance requirement, not its implementation:
+today `refreshMarket` can swallow Jupiter failures and return a partial wallet
+without a typed stop signal. Existing frontend queue stopping covers surfaced
+Worker failures only. Provider budget enforcement and end-to-end stop propagation
+need separate implementation/acceptance before hosted activation. Helius/Jupiter
+quota and provider logging/privacy acceptance remain WL-O1 gates.
 
 ## Acceptance and handoff
 
@@ -275,8 +320,9 @@ quota exhaustion must degrade private features without breaking public browsing.
   injection tests; concurrent duplicate/capacity/deletion tests; missing D1/auth
   configuration must not disable public APIs; production cannot accept emulators.
 - WL-2/3: verification/reset/linking flows; credential conflicts without UID/list
-  merging; explicit save after login; newest-first/limits; no provider work for
-  wallet rows; no stale responses after sign-out/account switch; keyboard/mobile
+  merging; explicit save after login; newest-first/limits; bounded automatic wallet
+  summaries with per-row failures, no wallet-activity reads and no stale responses
+  after sign-out/account switch; keyboard/mobile
   acceptance and preservation of anonymous browsing.
 - WL-4: permanent deletion, fresh authentication, status receipt constraints,
   commit failure, Firebase success + D1 completion failure, ambiguous timeout,
