@@ -36,17 +36,17 @@ jobs:
   # then a dry-run build. No browser suite is added merely for backend symmetry.
   # Project: ci:prepare produces the prebundled Worker used by the release job.
   verify:
-    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@37151e604a66c0dbb68b5631534c7124d4d95798
+    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@d7d0c297f0b4038e9815349fd16f79bb92d77ceb
     with:
       # Shared: checkout and reusable workflow must use the same immutable pin.
-      automation_sha: 37151e604a66c0dbb68b5631534c7124d4d95798
+      automation_sha: d7d0c297f0b4038e9815349fd16f79bb92d77ceb
       # Shared: explicit dispatch SHA or exact PR/main event revision.
       source_sha: ${{ inputs.sha || github.sha }}
       environment: dev
       # Project: preserve the Worker's supported toolchain, independent of frontend.
       node_version: '22'
   # Shared: only successful main push/manual dev verification can deliver dev.
-  # The called job binds dev, checks enablement/artifact integrity/freshness and
+  # The called job binds dev, checks artifact integrity/freshness without an opt-in and
   # serializes target mutations without cancelling active delivery.
   # Project: scripts/ci-deploy.mjs enforces isolated KV/origins/preview policy,
   # deploys the checked bundle, honors explicit refresh_dev and checks health/ready.
@@ -54,9 +54,9 @@ jobs:
   deploy_dev:
     needs: verify
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@37151e604a66c0dbb68b5631534c7124d4d95798
+    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@d7d0c297f0b4038e9815349fd16f79bb92d77ceb
     with:
-      automation_sha: 37151e604a66c0dbb68b5631534c7124d4d95798
+      automation_sha: d7d0c297f0b4038e9815349fd16f79bb92d77ceb
       source_sha: ${{ inputs.sha || github.sha }}
       environment: dev
       node_version: '22'
