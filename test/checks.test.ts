@@ -25,12 +25,11 @@ test('check owns every CI quality stage exactly once and ends in a dry-run build
     new URL('../.github/workflows/ci.yml', import.meta.url),
     'utf8',
   );
-  const qualityJob = workflow.slice(
-    workflow.indexOf('\n  test:'),
-    workflow.indexOf('\n  deploy:'),
+  assert.match(
+    workflow,
+    /ci-cd-workflows\/\.github\/workflows\/verify-worker.yml@[a-f0-9]{40}/,
   );
-  const stages = [...qualityJob.matchAll(/- run: (.+)/g)].map(
-    (match) => match[1],
-  );
-  assert.deepEqual(stages, ['npm ci', 'npm run check']);
+  assert.equal(scripts['ci:quality'], 'npm run check');
+  assert.ok(workflow.includes('name: test'));
+  assert.ok(workflow.includes('needs: verify'));
 });

@@ -5,6 +5,8 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
+    "ci:quality": "npm run check",
+    "ci:prepare": "node scripts/ci-prepare.mjs",
     "lint": "eslint .",
     "check:tooling": "node scripts/check-tooling.mjs",
     "format": "prettier --write .",
