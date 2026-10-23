@@ -26,10 +26,10 @@ jobs:
   # Shared: these candidate checks have no production deployment/refresh credentials.
   # Production-selected artifact/configuration identity is retained for the deploy job.
   verify_release:
-    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@1d73e4b1124ca2a065cf748d52747ffb63a014e9
+    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@37151e604a66c0dbb68b5631534c7124d4d95798
     with:
       # Shared: reusable workflow and implementation checkout have one immutable pin.
-      automation_sha: 1d73e4b1124ca2a065cf748d52747ffb63a014e9
+      automation_sha: 37151e604a66c0dbb68b5631534c7124d4d95798
       source_sha: ${{ inputs.sha }}
       # Shared: explicit production target, never a free-form environment selector.
       environment: production
@@ -48,9 +48,9 @@ jobs:
   deploy_production:
     needs: verify_release
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
-    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@1d73e4b1124ca2a065cf748d52747ffb63a014e9
+    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@37151e604a66c0dbb68b5631534c7124d4d95798
     with:
-      automation_sha: 1d73e4b1124ca2a065cf748d52747ffb63a014e9
+      automation_sha: 37151e604a66c0dbb68b5631534c7124d4d95798
       source_sha: ${{ inputs.sha }}
       environment: production
       node_version: '22'

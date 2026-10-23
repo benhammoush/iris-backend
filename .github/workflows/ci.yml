@@ -36,10 +36,10 @@ jobs:
   # then a dry-run build. No browser suite is added merely for backend symmetry.
   # Project: ci:prepare produces the prebundled Worker used by the release job.
   verify:
-    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@1d73e4b1124ca2a065cf748d52747ffb63a014e9
+    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@37151e604a66c0dbb68b5631534c7124d4d95798
     with:
       # Shared: checkout and reusable workflow must use the same immutable pin.
-      automation_sha: 1d73e4b1124ca2a065cf748d52747ffb63a014e9
+      automation_sha: 37151e604a66c0dbb68b5631534c7124d4d95798
       # Shared: explicit dispatch SHA or exact PR/main event revision.
       source_sha: ${{ inputs.sha || github.sha }}
       environment: dev
@@ -54,9 +54,9 @@ jobs:
   deploy_dev:
     needs: verify
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@1d73e4b1124ca2a065cf748d52747ffb63a014e9
+    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@37151e604a66c0dbb68b5631534c7124d4d95798
     with:
-      automation_sha: 1d73e4b1124ca2a065cf748d52747ffb63a014e9
+      automation_sha: 37151e604a66c0dbb68b5631534c7124d4d95798
       source_sha: ${{ inputs.sha || github.sha }}
       environment: dev
       node_version: '22'
