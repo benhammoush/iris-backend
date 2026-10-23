@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profile": "worker",
   "nodeVersion": "22",
-  "automationSha": "37151e604a66c0dbb68b5631534c7124d4d95798",
+  "automationSha": "d7d0c297f0b4038e9815349fd16f79bb92d77ceb",
   "integration": false,
   "manualRefresh": true,
   "legacyChecks": ["test"],
