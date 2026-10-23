@@ -13,7 +13,7 @@ on:
         converted_to_draft,
       ]
   workflow_run:
-    workflows: [Iris Worker API — CI & Deploy]
+    workflows: [CI]
     types: [completed]
   status:
   check_run:
