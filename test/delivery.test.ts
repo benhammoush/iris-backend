@@ -46,7 +46,7 @@ test('delivery preserves native target-scoped credentials, prior required checks
   assert.ok(adapter.includes("event.inputs?.refresh_dev === 'true'"));
   assert.ok(adapter.includes('/internal/refresh'));
   assert.ok(adapter.includes('publishWorker'));
-  assert.ok(config.deploymentVariables.includes('DEPLOY_ENABLED'));
+  assert.ok(!config.deploymentVariables.includes('DEPLOY_ENABLED'));
   assert.ok(
     workflow.includes('IRIS_REFRESH_TOKEN: ${{ secrets.IRIS_REFRESH_TOKEN }}'),
   );
