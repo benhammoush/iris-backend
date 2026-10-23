@@ -1,182 +1,61 @@
-/**
- * Exercises the workflow's manual release guard without Git or provider access.
- * Structural checks protect the remaining delivery controls, not live policy.
- * @packageDocumentation
- */
+/** Consumer and isolation contracts; executable rejection tests live with the pinned shared release guards. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
 
 const workflow = readFileSync(
   new URL('../.github/workflows/ci.yml', import.meta.url),
   'utf8',
-).replace(/\r/g, '');
+);
+const production = readFileSync(
+  new URL('../.github/workflows/deploy-production.yml', import.meta.url),
+  'utf8',
+);
 const configuration = readFileSync(
   new URL('../wrangler.toml', import.meta.url),
   'utf8',
 );
-const bash =
-  process.platform === 'win32'
-    ? (process.env.IRIS_TEST_BASH ??
-      join(process.env.ProgramFiles ?? 'C:/Program Files', 'Git/bin/bash.exe'))
-    : 'bash';
+const config = JSON.parse(
+  readFileSync(new URL('../.github/ci-cd.json', import.meta.url), 'utf8'),
+);
 
-/**
- * Runs the actual pre-checkout validation step with controlled public inputs.
- * GitHub's merged-ancestor check is separate and is checked structurally below.
- * @param target - Requested hosted deployment target.
- * @param sha - Candidate source identity, not a repository checkout.
- * @param ref - Workflow branch; only main may manually release.
- * @param attempt - Explicit run attempt, independent of the host test environment.
- * @returns The Bash exit status; interpreter errors fail rather than skip tests.
- */
-function validateRelease(
-  target: string,
-  sha: string,
-  ref: string,
-  attempt = '1',
-) {
-  const script = workflow.match(
-    /- name: Validate manual release[\s\S]*?run: \|\n((?: {10}[^\n]*\n)+)/,
-  )?.[1];
-  assert.ok(script, 'Missing manual validation step');
-  const result = spawnSync(bash, ['-e', '-c', script.replace(/^ {10}/gm, '')], {
-    env: {
-      ...process.env,
-      TARGET: target,
-      SOURCE_SHA: sha,
-      GITHUB_REF: ref,
-      GITHUB_RUN_ATTEMPT: attempt,
-    },
-    encoding: 'utf8',
-    timeout: 10_000,
-  });
-  if (result.error) throw result.error;
-  assert.notEqual(result.status, null, result.stderr);
-  return result.status;
-}
-
-/**
- * Execute only the actual predeployment production guard, never a provider command.
- * @param target - Selected hosted environment.
- * @param event - Workflow trigger, which must be dispatch for production.
- * @param attempt - Explicit attempt to exercise deployment-only reruns.
- * @returns The guard exit status; interpreter errors fail verification.
- */
-function validateDeploymentAttempt(
-  target: string,
-  event: string,
-  attempt: string,
-) {
-  const deployment = workflow.slice(
-    workflow.indexOf('- name: Validate configuration, deploy'),
-  );
-  const script = deployment.match(
-    / {10}if \[ "\$TARGET" = production \]; then\n(?: {12}[^\n]*\n)+ {10}fi/,
-  )?.[0];
-  assert.ok(script, 'Missing predeployment production guard');
-  const result = spawnSync(bash, ['-e', '-c', script.replace(/^ {10}/gm, '')], {
-    env: {
-      ...process.env,
-      TARGET: target,
-      GITHUB_EVENT_NAME: event,
-      GITHUB_RUN_ATTEMPT: attempt,
-    },
-    encoding: 'utf8',
-    timeout: 10_000,
-  });
-  if (result.error) throw result.error;
-  assert.notEqual(result.status, null, result.stderr);
-  return result.status;
-}
-
-test('production requires a new dispatch including deployment-only reruns', () => {
-  for (const attempt of ['2', '', '0', '01', 'invalid']) {
-    assert.notEqual(
-      validateRelease('production', 'a'.repeat(40), 'refs/heads/main', attempt),
-      0,
-    );
+test('release entry points use the same immutable shared guards without an automatic production trigger', () => {
+  for (const file of [workflow, production]) {
+    assert.ok(file.includes(`verify-worker.yml@${config.automationSha}`));
+    assert.ok(file.includes(`deploy-worker.yml@${config.automationSha}`));
+    assert.ok(!file.includes('secrets: inherit'));
   }
-  assert.equal(
-    validateRelease('dev', 'a'.repeat(40), 'refs/heads/main', '2'),
-    0,
-  );
-  assert.equal(
-    validateDeploymentAttempt('production', 'workflow_dispatch', '1'),
-    0,
-  );
-  for (const [event, attempt] of [
-    ['workflow_dispatch', '2'],
-    ['workflow_dispatch', ''],
-    ['workflow_dispatch', '0'],
-    ['workflow_dispatch', '01'],
-    ['workflow_dispatch', 'invalid'],
-    ['push', '1'],
-    ['', '1'],
-  ]) {
-    assert.notEqual(validateDeploymentAttempt('production', event, attempt), 0);
-  }
-  assert.equal(validateDeploymentAttempt('dev', 'push', '2'), 0);
+  assert.ok(workflow.includes('needs: verify'));
+  assert.ok(workflow.includes('environment: dev'));
+  assert.ok(workflow.includes("github.ref == 'refs/heads/main'"));
+  assert.ok(production.includes('needs: verify_release'));
+  assert.ok(production.includes('source_sha: ${{ inputs.sha }}'));
+  assert.ok(production.includes('environment: production'));
+  assert.doesNotMatch(production, /^ {2}(push|pull_request):/m);
 });
 
-test('manual releases accept only dev and production with exact source on main', () => {
-  for (const target of ['dev', 'production']) {
-    assert.equal(validateRelease(target, 'a'.repeat(40), 'refs/heads/main'), 0);
-  }
-  for (const target of ['staging', 'local', '', 'Production', 'dev; exit 0']) {
-    assert.notEqual(
-      validateRelease(target, 'a'.repeat(40), 'refs/heads/main'),
-      0,
-    );
-  }
-  for (const sha of [
-    '',
-    'main',
-    'a'.repeat(39),
-    'a'.repeat(41),
-    'G'.repeat(40),
-  ]) {
-    assert.notEqual(validateRelease('dev', sha, 'refs/heads/main'), 0);
-  }
-  assert.notEqual(
-    validateRelease('production', 'a'.repeat(40), 'refs/heads/feature'),
-    0,
+test('delivery preserves native target-scoped credentials, prior required checks and explicit refresh semantics', () => {
+  assert.deepEqual(config.legacyChecks, ['test']);
+  assert.ok(workflow.includes('name: test'));
+  assert.ok(workflow.includes('refresh_dev:'));
+  const adapter = readFileSync(
+    new URL('../scripts/ci-deploy.mjs', import.meta.url),
+    'utf8',
   );
-});
-
-test('delivery retains source, main, approval environment and serialization controls', () => {
-  const deployment = workflow.slice(workflow.indexOf('\n  deploy:'));
-  assert.ok(deployment.includes("TARGET: ${{ inputs.target || 'dev' }}"));
-  assert.match(workflow, /options: \[dev, production\]/);
-  assert.match(workflow, /TARGET: \$\{\{ inputs\.target \|\| 'dev' \}\}/);
-  assert.match(workflow, /git merge-base --is-ancestor HEAD origin\/main/);
-  assert.equal(workflow.match(/ref: \$\{\{ env\.SOURCE_SHA \}\}/g)?.length, 2);
-  assert.match(workflow, /needs: test/);
-  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /environment: \$\{\{ inputs\.target \|\| 'dev' \}\}/);
-  assert.match(
-    workflow,
-    /group: iris-worker-\$\{\{ inputs\.target \|\| 'dev' \}\}/,
-  );
-  assert.match(workflow, /cancel-in-progress: false/);
-  assert.match(workflow, /test "\$DEPLOY_ENABLED" = true/);
-  assert.match(
-    workflow,
-    /if \[ "\$GITHUB_EVENT_NAME" = push \]; then\n\s+git fetch origin main\n\s+test "\$\(git rev-parse origin\/main\)" = "\$SOURCE_SHA"/,
-  );
-  assert.match(
-    workflow,
-    /if \[ "\$TARGET" != dev \] \|\| \[ "\$REFRESH_DEV" = true \]; then/,
+  assert.ok(adapter.includes("target === 'production'"));
+  assert.ok(adapter.includes("event.inputs?.refresh_dev === 'true'"));
+  assert.ok(adapter.includes('/internal/refresh'));
+  assert.ok(adapter.includes('publishWorker'));
+  assert.ok(config.deploymentVariables.includes('DEPLOY_ENABLED'));
+  assert.ok(
+    workflow.includes('IRIS_REFRESH_TOKEN: ${{ secrets.IRIS_REFRESH_TOKEN }}'),
   );
 });
 
 test('Worker targets retain local isolation and production-only hourly Cron', () => {
   assert.doesNotMatch(configuration, /\[env\.staging(?:\]|\.)/);
-  for (const target of ['local', 'e2e', 'dev', 'production']) {
+  for (const target of ['local', 'e2e', 'dev', 'production'])
     assert.ok(configuration.includes(`[env.${target}]`));
-  }
   assert.doesNotMatch(configuration, /\[env\.dev\.triggers\]/);
   assert.match(
     configuration,
@@ -191,9 +70,9 @@ test('Worker targets retain local isolation and production-only hourly Cron', ()
   }
 });
 
-test('hosted Workers bind distinct new namespaces with explicit workers.dev routes', () => {
+test('hosted Workers bind distinct new namespaces, not retired resources', () => {
   const namespaces = new Set<string>();
-  const retiredNamespaces = new Set([
+  const retired = new Set([
     '837c0562b3844757b252f0324dc70b74',
     'd9cc2796e2954a498851b3ad5ecefd59',
     '8409635b839c49558d1b6e9bdeaf0f03',
@@ -206,9 +85,9 @@ test('hosted Workers bind distinct new namespaces with explicit workers.dev rout
       .split(`[[env.${target}.kv_namespaces]]`)[1]
       ?.split(/^\[/m)[0];
     const id = binding?.match(/^id = "([0-9a-f]{32})"/m)?.[1];
-    assert.ok(id, `Missing ${target} namespace`);
+    assert.ok(id);
     assert.notEqual(id, '00000000000000000000000000000000');
-    assert.equal(retiredNamespaces.has(id), false);
+    assert.equal(retired.has(id), false);
     namespaces.add(id);
   }
   assert.equal(namespaces.size, 2);
@@ -217,7 +96,7 @@ test('hosted Workers bind distinct new namespaces with explicit workers.dev rout
 test('hosted Workers explicitly disable version previews without disabling their APIs', () => {
   for (const target of ['dev', 'production']) {
     const worker = configuration.split(`[env.${target}]`)[1]?.split(/^\[/m)[0];
-    assert.ok(worker, `Missing ${target} Worker configuration`);
+    assert.ok(worker);
     assert.match(worker, /^workers_dev = true\s*$/m);
     assert.match(worker, /^preview_urls = false\s*$/m);
   }

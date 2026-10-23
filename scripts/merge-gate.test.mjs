@@ -383,6 +383,12 @@ test('workflow only runs trusted main with read-only permissions and no candidat
   assert.ok(workflow.includes("if: github.ref == 'refs/heads/main'"));
   assert.ok(workflow.includes('ref: ${{ github.sha }}'));
   assert.ok(workflow.includes('persist-credentials: false'));
+  assert.match(workflow, /workflows: \[CI\]/);
+  const ci = readFileSync(
+    new URL('../.github/workflows/ci.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(ci, /^name: CI$/m);
   assert.doesNotMatch(
     workflow,
     /: write|secrets\.|npm ci|download-artifact|pull_request\.head/,
