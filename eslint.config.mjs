@@ -76,7 +76,7 @@ export default [
   },
   { ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.wrangler/**'] },
   {
-    files: ['**/*.{js,mjs,ts}'],
+    files: ['**/*.{js,mjs,ts,tsx}'],
     languageOptions: { parser: tseslint.parser, globals: globals.worker },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
