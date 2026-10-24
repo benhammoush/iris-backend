@@ -14,7 +14,7 @@ async function discover(directory) {
   return files;
 }
 
-const files = (await discover(new URL('../test/', import.meta.url))).sort();
+const files = (await discover(new URL('../tests/', import.meta.url))).sort();
 if (!files.length) throw new Error('No Worker tests were discovered.');
 
 // Explicit discovery includes both languages throughout the migration on Node 22.
