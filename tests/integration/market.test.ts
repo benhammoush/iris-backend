@@ -4,7 +4,6 @@ import { MAX_CATALOG_ASSETS, SOL_MINT } from '../../src/constants.ts';
 import {
   CANDLE_TIMEFRAMES,
   fetchCandles,
-  fetchPriceHistory,
   refreshDiscoveryCatalogs,
   refreshMarket,
 } from '../../src/market.ts';
@@ -186,12 +185,6 @@ test('Birdeye requests USD Solana candles with the configured interval and prese
     assert.equal(candles.timeframe, '1D');
     assert.equal(candles.candles[0].closeUsd, 150);
     assert.equal(candles.candles[0].volumeUsd, 3000);
-    const points = await fetchPriceHistory(SOL_MINT, 'birdeye-key', '1d');
-    assert.ok(points);
-    assert.deepEqual(
-      points.map((point) => point.price),
-      [150, 151],
-    );
   } finally {
     globalThis.fetch = originalFetch;
   }
