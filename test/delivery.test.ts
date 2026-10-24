@@ -34,9 +34,15 @@ test('release entry points use the same immutable shared guards without an autom
   assert.doesNotMatch(production, /^ {2}(push|pull_request):/m);
 });
 
-test('delivery preserves native target-scoped credentials, prior required checks and explicit refresh semantics', () => {
-  assert.deepEqual(config.legacyChecks, ['test']);
-  assert.ok(workflow.includes('name: test'));
+test('delivery preserves target-scoped credentials and refresh semantics with the canonical Verify check', () => {
+  assert.deepEqual(config.legacyChecks, []);
+  assert.match(
+    workflow,
+    /verify_result:\s+name: Verify\s+needs: verify\s+if: always\(\)/,
+  );
+  assert.ok(workflow.includes('test "$VERIFY_RESULT" = success'));
+  assert.ok(workflow.includes('VERIFY_RESULT: ${{ needs.verify.result }}'));
+  assert.doesNotMatch(workflow, /legacy_\d+:/);
   assert.ok(workflow.includes('refresh_dev:'));
   const adapter = readFileSync(
     new URL('../scripts/ci-deploy.mjs', import.meta.url),
