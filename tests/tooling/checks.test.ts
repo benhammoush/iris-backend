@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { parse } from 'yaml';
+import { record } from '../../src/record.ts';
 
 const { scripts } = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
@@ -21,15 +23,20 @@ test('check owns every CI quality stage exactly once and ends in a dry-run build
     'npm run build',
   ]);
   assert.equal(scripts.build, 'wrangler deploy --dry-run --env production');
-  const workflow = readFileSync(
-    new URL('../../.github/workflows/ci.yml', import.meta.url),
-    'utf8',
+  const workflow = record(
+    parse(
+      readFileSync(
+        new URL('../../.github/workflows/ci.yml', import.meta.url),
+        'utf8',
+      ),
+    ),
   );
+  const jobs = record(workflow.jobs);
   assert.match(
-    workflow,
-    /ci-cd-workflows\/\.github\/workflows\/verify-worker.yml@[a-f0-9]{40}/,
+    String(record(jobs.verify).uses),
+    /^benhammoush\/ci-cd-workflows\/\.github\/workflows\/verify-worker.yml@[a-f0-9]{40}$/,
   );
   assert.equal(scripts['ci:quality'], 'npm run check');
-  assert.match(workflow, /verify_result:\s+name: Verify/);
-  assert.ok(workflow.includes('needs: verify'));
+  assert.equal(record(jobs.verify_result).name, 'Verify');
+  assert.equal(record(jobs.verify_result).needs, 'verify');
 });
