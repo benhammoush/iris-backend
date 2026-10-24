@@ -3,6 +3,12 @@ import { ESLint } from 'eslint';
 import { check, resolveConfig } from 'prettier';
 import { readdir } from 'node:fs/promises';
 
+// The existing Node-only policy suite moved from scripts; other Worker tests stay TypeScript-only.
+const nodePolicyTest = new URL(
+  '../tests/tooling/merge-gate.test.mjs',
+  import.meta.url,
+).href;
+
 async function assertTypeScriptOnly(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = new URL(
@@ -12,13 +18,14 @@ async function assertTypeScriptOnly(directory) {
     if (entry.isDirectory()) await assertTypeScriptOnly(path);
     else
       assert.ok(
-        !/\.(?:js|jsx|mjs|cjs)$/.test(entry.name),
+        !/\.(?:js|jsx|mjs|cjs)$/.test(entry.name) ||
+          path.href === nodePolicyTest,
         `Application JavaScript is not allowed: ${path.pathname}`,
       );
   }
 }
 await assertTypeScriptOnly(new URL('../src/', import.meta.url));
-await assertTypeScriptOnly(new URL('../test/', import.meta.url));
+await assertTypeScriptOnly(new URL('../tests/', import.meta.url));
 
 const eslint = new ESLint();
 const strictProbe = await eslint.lintText('export const unchecked: any = 1;', {
