@@ -15,8 +15,9 @@ Docblocks are a reading aid, not a comment-count target.
 - Explain non-obvious decisions beside the relevant code. Keep architecture,
   setup and operational history in their owning documentation.
 - Ordinary anonymous callbacks and declarative test cases do not each need a
-  docblock. Named test helpers do. Generated files and build artifacts are exempt,
-  not difficult handwritten code.
+  docblock. Named test helpers do. Only generated files and build-artifact paths
+  explicitly excluded by `eslint.config.mjs` are exempt; files outside those
+  exclusions remain checked. Never exclude difficult handwritten code.
 - Update comments with behaviour changes. TODOs need a concrete reason or removal
   condition, preferably an issue reference.
 

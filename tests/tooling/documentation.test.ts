@@ -60,6 +60,23 @@ test('requires a separate module overview and function description', async () =>
   );
 });
 
+test('requires the TypeScript package overview to be initial and unique', async () => {
+  assert.ok(
+    (
+      await errors(
+        'const before = 1;\n/** Fixture module.\n * @packageDocumentation\n */\nexport {};',
+      )
+    ).includes('jsdoc/require-file-overview'),
+  );
+  assert.ok(
+    (
+      await errors(
+        '/** First overview.\n * @packageDocumentation\n */\n/** Second overview.\n * @packageDocumentation\n */\nimport "fixture";',
+      )
+    ).includes('jsdoc/require-file-overview'),
+  );
+});
+
 test('accepts documented contracts and exempts ordinary anonymous callbacks', async () => {
   for (const wrapper of [
     'memo',
