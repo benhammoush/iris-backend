@@ -23,6 +23,11 @@ async function errors(
   filePath = 'src/documentation-fixture.ts',
 ) {
   const [result] = await eslint.lintText(source, { filePath });
+  assert.equal(result.fatalErrorCount, 0);
+  assert.deepEqual(
+    result.messages.filter((message) => message.ruleId === null),
+    [],
+  );
   return result.messages
     .filter((message) => /^(jsdoc\/|tsdoc\/)/.test(message.ruleId ?? ''))
     .map((message) => message.ruleId);
@@ -46,6 +51,13 @@ for (const source of [
     assert.ok((await errors(header + source)).includes('jsdoc/require-jsdoc'));
   });
 }
+
+test('rejects malformed or ignored lint fixtures instead of silently passing', async () => {
+  await assert.rejects(() => errors('export const broken = ;'));
+  await assert.rejects(() =>
+    errors('export {};', 'dist/documentation-fixture.ts'),
+  );
+});
 
 test('requires a separate module overview and function description', async () => {
   assert.ok(
