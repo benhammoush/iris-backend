@@ -2,6 +2,6 @@
   "repository": "benhammoush/iris-backend",
   "base": "main",
   "workflow": "ci.yml",
-  "jobs": ["test"],
+  "jobs": ["Verify"],
   "mode": "manual"
 }

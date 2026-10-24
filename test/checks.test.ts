@@ -30,6 +30,6 @@ test('check owns every CI quality stage exactly once and ends in a dry-run build
     /ci-cd-workflows\/\.github\/workflows\/verify-worker.yml@[a-f0-9]{40}/,
   );
   assert.equal(scripts['ci:quality'], 'npm run check');
-  assert.ok(workflow.includes('name: test'));
+  assert.match(workflow, /verify_result:\s+name: Verify/);
   assert.ok(workflow.includes('needs: verify'));
 });

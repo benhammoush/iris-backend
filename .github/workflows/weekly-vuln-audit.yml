@@ -1,0 +1,18 @@
+# Runs weekly/manual vulnerability checks using pinned shared CI/CD logic.
+# Calls the shared vulnerability audit weekly or manually; no fixes or deployment.
+name: Weekly vulnerability audit
+on:
+  schedule:
+    - cron: '43 8 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: weekly-vuln-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    name: Audit vulnerabilities
+    uses: benhammoush/ci-cd-workflows/.github/workflows/weekly-vuln-audit.yml@64b5e00a3d2895a8cba05b040f0d5a0415613d9e
+    with:
+      node_version: '22'

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "profile": "worker",
   "nodeVersion": "22",
-  "automationSha": "a35aea526ca8b69d7ec27ff7952cff6af8c1bbe5",
+  "automationSha": "64b5e00a3d2895a8cba05b040f0d5a0415613d9e",
   "integration": false,
   "manualRefresh": true,
-  "legacyChecks": ["test"],
+  "legacyChecks": [],
   "deploymentVariables": ["CLOUDFLARE_ACCOUNT_ID", "IRIS_WORKER_ORIGIN"],
   "buildEnvironment": { "dev": {}, "production": {} }
 }

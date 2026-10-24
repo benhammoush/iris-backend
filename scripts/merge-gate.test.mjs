@@ -375,24 +375,19 @@ test('transport exposes reads and one fixed GraphQL query, with no write/retry/r
   );
 });
 
-test('workflow only runs trusted main with read-only permissions and no candidate installs', () => {
-  const workflow = readFileSync(
-    new URL('../.github/workflows/merge-eligibility.yml', import.meta.url),
-    'utf8',
+test('retired merge observer has no workflow entry point', () => {
+  assert.throws(
+    () =>
+      readFileSync(
+        new URL('../.github/workflows/merge-eligibility.yml', import.meta.url),
+      ),
+    { code: 'ENOENT' },
   );
-  assert.ok(workflow.includes("if: github.ref == 'refs/heads/main'"));
-  assert.ok(workflow.includes('ref: ${{ github.sha }}'));
-  assert.ok(workflow.includes('persist-credentials: false'));
-  assert.match(workflow, /workflows: \[CI\]/);
   const ci = readFileSync(
     new URL('../.github/workflows/ci.yml', import.meta.url),
     'utf8',
   );
   assert.match(ci, /^name: CI$/m);
-  assert.doesNotMatch(
-    workflow,
-    /: write|secrets\.|npm ci|download-artifact|pull_request\.head/,
-  );
 });
 
 test('GraphQL walkthrough collection preserves editor provenance and rejects truncated evidence', async () => {
