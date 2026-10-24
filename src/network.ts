@@ -1,16 +1,24 @@
+/**
+ * Network metric aggregation with independent failure and freshness semantics.
+ * @packageDocumentation
+ */
+
 import { array, record } from './record.ts';
 import { unavailable } from './diagnostics.ts';
 
+/** Asynchronous Solana RPC operation used by network aggregation. */
 export type Rpc = (
   method: string,
   params: unknown[],
   timeoutMs?: number,
 ) => Promise<unknown>;
+/** Supported operation outcome categories for aggregation or diagnostics. */
 interface Outcome {
   status: 'fulfilled' | 'rejected';
   value?: unknown;
   reason?: unknown;
 }
+/** Independent RPC outcomes consumed by network metric normalization. */
 type NetworkResults = Record<
   | 'slots'
   | 'epoch'
@@ -28,10 +36,12 @@ type NetworkResults = Record<
 >;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
+/** Accept only finite numeric values from the provider boundary. */
 function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** Compute the median of the available numeric samples. */
 function median(values: number[]) {
   const sorted = values
     .filter((value) => finite(value) !== null)
@@ -43,6 +53,7 @@ function median(values: number[]) {
     : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
+/** Retain a previous usable metric as stale or mark it unavailable. */
 function staleOrUnavailable(previous: unknown, key: string) {
   const prior = record(previous)[key];
   return prior && record(prior).state !== 'unavailable'
@@ -50,6 +61,7 @@ function staleOrUnavailable(previous: unknown, key: string) {
     : { state: 'unavailable', asOf: null };
 }
 
+/** Carry forward dashboard network data with stale status rather than presenting it as fresh. */
 export function staleDashboardNetwork(previous: unknown = null) {
   return {
     source: 'helius-rpc',
@@ -60,10 +72,12 @@ export function staleDashboardNetwork(previous: unknown = null) {
   };
 }
 
+/** Extract a fulfilled provider result without throwing for an independently failed sibling request. */
 function fulfilled(result: Outcome): unknown {
   return result.status === 'fulfilled' ? result.value : null;
 }
 
+/** Record failed RPC method identities without logging credential-bearing requests. */
 function logRejectedRpcCalls(methods: string[], results: Outcome[]) {
   results.forEach((result, index) => {
     if (result.status === 'rejected')
@@ -77,6 +91,7 @@ function logRejectedRpcCalls(methods: string[], results: Outcome[]) {
   });
 }
 
+/** Summarize supported performance samples without inventing missing provider measurements. */
 export function summarizePerformance(samples: unknown) {
   const usable = array(samples)
     .map((sample) => ({
@@ -120,6 +135,7 @@ export function summarizePerformance(samples: unknown) {
   };
 }
 
+/** Normalize validator production counters into the network summary. */
 export function summarizeProduction(production: unknown) {
   const value = record(record(production).value);
   const entries = Object.values(record(value.byIdentity));
@@ -141,6 +157,7 @@ export function summarizeProduction(production: unknown) {
   };
 }
 
+/** Extract supported block metrics for the latest-block summary. */
 export function summarizeLatestBlock(block: unknown) {
   const data = record(block);
   const transactions = array(data.transactions);
@@ -171,6 +188,7 @@ export function summarizeLatestBlock(block: unknown) {
   };
 }
 
+/** Combine independently available RPC results and retain explicit stale or unavailable fields. */
 export function normalizeNetworkSnapshot(
   results: NetworkResults,
   previous: unknown = null,
@@ -311,6 +329,7 @@ export function normalizeNetworkSnapshot(
   };
 }
 
+/** Refresh network metrics while preserving partial-failure and freshness semantics. */
 export async function refreshNetworkMetrics(
   rpc: Rpc,
   previous: unknown = null,
@@ -459,6 +478,7 @@ export async function refreshNetworkMetrics(
   );
 }
 
+/** Refresh dashboard-specific metrics using the supplied confirmed slot and prior state. */
 export async function refreshDashboardNetworkMetrics(
   rpc: Rpc,
   confirmedSlot: unknown,

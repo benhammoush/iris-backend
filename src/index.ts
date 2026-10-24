@@ -1,3 +1,8 @@
+/**
+ * Application entry point and runtime integration boundaries.
+ * @packageDocumentation
+ */
+
 import { getConfig, type WorkerConfig } from './config.ts';
 import { error, json, requestId } from './http.ts';
 import { route } from './routes.ts';
@@ -9,13 +14,18 @@ import { errorMessage } from './record.ts';
 import { diagnostic, unavailable, refreshDiagnostic } from './diagnostics.ts';
 import { watchlistRoute } from './watchlists.ts';
 
+/** Request boundary accepted by the Worker routing implementation. */
 interface WorkerRequest {
   url: string;
   method: string;
-  headers: { get: (name: string) => string | null };
+  headers: {
+    /** Read an HTTP request header without depending on a concrete Headers instance. */
+    get: (name: string) => string | null;
+  };
   body?: ReadableStream<Uint8Array> | null;
 }
 
+/** Resolve the permitted browser origin from the validated Worker configuration. */
 function allowedOrigin(
   request: WorkerRequest,
   config: WorkerConfig,
@@ -24,6 +34,7 @@ function allowedOrigin(
   return origin && config.corsOrigins.includes(origin) ? origin : null;
 }
 
+/** Refresh dashboard data independently of browser traffic as scheduled backstop work. */
 async function refreshHeliusDashboardBackstop(env: Env, config: WorkerConfig) {
   try {
     await refreshHeliusDashboardSample(env, config);
@@ -33,6 +44,7 @@ async function refreshHeliusDashboardBackstop(env: Env, config: WorkerConfig) {
   }
 }
 
+/** Refresh the external dashboard cache without making browser reads responsible for scheduled upkeep. */
 async function refreshDefiLlamaBackstop(env: Env) {
   try {
     await refreshDefiLlamaDashboard(
@@ -47,6 +59,7 @@ async function refreshDefiLlamaBackstop(env: Env) {
 }
 
 const worker = {
+  /** Handle the incoming HTTP request using the environment bindings supplied by the runtime. */
   async fetch(
     request: WorkerRequest,
     env: Env,
@@ -148,6 +161,7 @@ const worker = {
       );
     }
   },
+  /** Run bounded background refresh or delivery work for the scheduled invocation. */
   async scheduled(_event: unknown, env: Env, _ctx?: unknown): Promise<void> {
     await refreshDiagnostic('scheduled-refresh', async () => {
       const config = getConfig(env);
@@ -161,6 +175,7 @@ const worker = {
 };
 
 export default {
+  /** Handle the incoming HTTP request using the environment bindings supplied by the runtime. */
   async fetch(
     request: WorkerRequest,
     env: Env,

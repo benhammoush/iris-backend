@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for transforms.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SOL_MINT } from '../../src/constants.ts';

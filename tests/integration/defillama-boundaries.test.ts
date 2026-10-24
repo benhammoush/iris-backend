@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for defillama boundaries.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -19,7 +24,10 @@ test('cache envelope narrowing does not claim cached item fields are validated',
   };
   assert.equal(isUsableDefiLlamaDashboard(dashboard), true);
   const fetchedAt = Date.parse(dashboard.fetchedAt);
-  const cache = { get: async () => dashboard };
+  const cache = {
+    /** Read the controlled cache or boundary value used by this assertion. */
+    get: async () => dashboard,
+  };
   assert.equal(
     (await loadDefiLlamaDashboard(cache, fetchedAt + DEFILLAMA_FRESH_AFTER_MS))
       .state,
@@ -62,10 +70,16 @@ test('malformed cache envelopes return unavailable rather than asserting a dashb
     },
   ]) {
     assert.equal(isUsableDefiLlamaDashboard(value), false);
-    assert.deepEqual(await loadDefiLlamaDashboard({ get: async () => value }), {
-      dashboard: null,
-      state: 'unavailable',
-    });
+    assert.deepEqual(
+      await loadDefiLlamaDashboard({
+        /** Read the controlled cache or boundary value used by this assertion. */
+        get: async () => value,
+      }),
+      {
+        dashboard: null,
+        state: 'unavailable',
+      },
+    );
   }
 });
 
@@ -117,6 +131,7 @@ test('provider normalization preserves existing numeric coercion and rejects inv
 test('invalid provider envelopes and HTTP failures never publish a cache record', async (t) => {
   let writes = 0;
   const cache = {
+    /** Observe or simulate the cache write requested by this test. */
     put: async () => {
       writes += 1;
     },

@@ -1,3 +1,8 @@
+/**
+ * Firebase token verification and configuration-scoped authentication caches.
+ * @packageDocumentation
+ */
+
 import {
   decodeProtectedHeader,
   importPKCS8,
@@ -15,9 +20,12 @@ const CERTS =
   'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const TOKEN = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/identitytoolkit';
+/** Represent unavailable data or configuration without treating it as an empty successful result. */
 const unavailable = () => new PrivateError('AUTH_UNAVAILABLE', 503);
+/** Construct the fixed error for an invalid boundary value. */
 const invalid = () => new PrivateError('AUTH_INVALID', 401);
 
+/** Authentication material scoped to one binding object and effective Firebase configuration. */
 interface AuthCache {
   certs?: Record<string, unknown>;
   certsUntil: number;
@@ -28,6 +36,7 @@ interface AuthCache {
 }
 const caches = new WeakMap<Env, AuthCache>();
 
+/** Reuse authentication state only for the same binding object and unchanged Firebase configuration. */
 function cacheFor(env: Env): AuthCache {
   const configuration = [
     env.FIREBASE_PROJECT_ID ?? '',
@@ -77,6 +86,7 @@ async function boundedJson(url: string, init?: RequestInit) {
   };
 }
 
+/** Exchange a signed service-account assertion and cache the token with an expiry safety margin. */
 async function accessTokenWork(env: Env, cache: AuthCache): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   if (cache.accessToken && cache.tokenUntil > now) return cache.accessToken;
@@ -112,12 +122,14 @@ async function accessTokenWork(env: Env, cache: AuthCache): Promise<string> {
   return cache.accessToken;
 }
 
+/** Coalesce concurrent service-account token refreshes within this authentication cache. */
 function accessToken(env: Env, cache: AuthCache) {
   return singleFlight(cache, ['firebase-oauth'], () =>
     accessTokenWork(env, cache),
   );
 }
 
+/** Verify the Firebase bearer token and return its subject; reject invalid or unavailable authentication. */
 export async function authenticateFirebase(
   request: { headers: Pick<Headers, 'get'> },
   env: Env,

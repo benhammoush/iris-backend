@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for single flight.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { singleFlight } from '../../src/singleFlight.ts';
@@ -7,6 +12,7 @@ test('identical pending work is shared, but completed results are not cached', a
   const scope = {};
   const gate = deferred<number>();
   let calls = 0;
+  /** Execute the controlled shared-work fixture and expose its invocation to the assertion. */
   const work = () => {
     calls++;
     return gate.promise;
@@ -25,6 +31,7 @@ test('identical pending work is shared, but completed results are not cached', a
 test('scopes, typed keys, cursor delimiters and function identities stay separate', async () => {
   const scope = {};
   const gate = deferred<void>();
+  /** Execute the controlled shared-work fixture and expose its invocation to the assertion. */
   const work = () => gate.promise;
   const first = singleFlight(scope, ['operation', null], work);
   const variants = [
@@ -66,6 +73,7 @@ test('asynchronous rejection and synchronous throw clear pending work for retry'
 
 test('unscoped work is not shared', async () => {
   let calls = 0;
+  /** Execute the controlled shared-work fixture and expose its invocation to the assertion. */
   const work = async () => ++calls;
   assert.deepEqual(
     await Promise.all([

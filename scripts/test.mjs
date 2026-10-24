@@ -1,7 +1,13 @@
+/**
+ * Discover Worker tests recursively and run them with the TypeScript loader.
+ * @file
+ */
+
 import { readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+/** Discover test files recursively and return stable filesystem paths for the test runner. */
 async function discover(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {

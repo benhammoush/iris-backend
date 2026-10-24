@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for network boundaries.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {

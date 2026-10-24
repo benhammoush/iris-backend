@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for coalescing.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import { deferred } from '../support/deferred.ts';
 import assert from 'node:assert/strict';
@@ -34,8 +39,10 @@ import worker from '../../src/index.ts';
 
 const otherMint = '11111111111111111111111111111111';
 const config = { heliusApiKey: 'test-helius', jupiterApiKey: 'test-jupiter' };
+/** Return the controlled unavailable-market result used by the test. */
 const noMarket = async () => null;
 
+/** Build the provider response payload for the exercised fixture case. */
 function payload(url: string, options: FetchStubOptions): unknown {
   if (url.includes('/parsed-events/'))
     return { data: [], paginationToken: null };
@@ -95,14 +102,22 @@ function payload(url: string, options: FetchStubOptions): unknown {
 
 test('on-demand loaders share identical work through cache writes, not completed results', async (t) => {
   const operations: Record<string, (env: Env) => Promise<unknown>> = {
+    /** Exercise the on-chain resource through the shared-work test fixture. */
     onchain: (env) => loadV3AssetOnchain(env, config, SOL_MINT),
+    /** Exercise the holder page through the shared-work test fixture. */
     holders: (env) => loadV3AssetHolders(env, config, SOL_MINT, 1),
+    /** Exercise asset distribution through the shared-work test fixture. */
     distribution: (env) => loadV3AssetDistribution(env, config, SOL_MINT),
+    /** Exercise the asset transaction page through the shared-work test fixture. */
     'asset transactions': (env) =>
       loadV3AssetTransactions(env, config, SOL_MINT, 25, null),
+    /** Exercise the wallet resource through the shared-work test fixture. */
     wallet: (env) => loadV3Wallet(env, config, otherMint, noMarket),
+    /** Exercise the wallet event page through the shared-work test fixture. */
     'wallet events': (env) => loadV3Events(env, config, otherMint, 25, null),
+    /** Exercise the legacy wallet resource through the shared-work test fixture. */
     'legacy wallet': (env) => loadWalletData(env, config, otherMint),
+    /** Exercise candle retrieval through the shared-work test fixture. */
     candles: (env) => candlesForAsset(env.SNAPSHOTS, SOL_MINT, 'test-birdeye'),
   };
   for (const [name, load] of Object.entries(operations)) {
@@ -113,6 +128,7 @@ test('on-demand loaders share identical work through cache writes, not completed
       let writes = 0;
       const env = testEnv({
         SNAPSHOTS: {
+          /** Observe or simulate the cache write requested by this test. */
           put: async () => {
             writes++;
           },
@@ -121,7 +137,11 @@ test('on-demand loaders share identical work through cache writes, not completed
       fetchStub.fetch = async (url, options) => {
         calls++;
         await gate.promise;
-        return { ok: true, json: async () => payload(url, options) };
+        return {
+          ok: true,
+          /** Return the controlled JSON payload for this provider-response fixture. */
+          json: async () => payload(url, options),
+        };
       };
       try {
         const first = load(env);
@@ -151,7 +171,11 @@ test('mint, timeframe, ending page, holder page, limit, cursor and wallet depend
   const env = testEnv();
   fetchStub.fetch = async (url, options) => {
     await gate.promise;
-    return { ok: true, json: async () => payload(url, options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => payload(url, options),
+    };
   };
   try {
     const requests = [
@@ -188,7 +212,11 @@ test('binding identity, provider configuration and cache-only mode stay isolated
   fetchStub.fetch = async (url, options) => {
     calls++;
     await gate.promise;
-    return { ok: true, json: async () => payload(url, options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => payload(url, options),
+    };
   };
   try {
     const first = loadV3AssetOnchain(env, config, SOL_MINT);
@@ -228,6 +256,7 @@ test('provider and cache-write failures are shared and allow later retries', asy
   let writes = 0;
   const env = testEnv({
     SNAPSHOTS: {
+      /** Observe or simulate the cache write requested by this test. */
       put: async () => {
         writes++;
         if (failWrite) throw new Error('KV failed');
@@ -237,7 +266,11 @@ test('provider and cache-write failures are shared and allow later retries', asy
   fetchStub.fetch = async (url, options) => {
     await gate.promise;
     if (failProvider) return { ok: false, status: 400 };
-    return { ok: true, json: async () => payload(url, options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => payload(url, options),
+    };
   };
   try {
     const first = loadV3AssetOnchain(env, config, SOL_MINT);
@@ -269,6 +302,7 @@ test('snapshot refresh shares the first timestamp and waits for complete data be
   let discoveryCalls = 0;
   const env = testEnv({
     SNAPSHOTS: {
+      /** Observe or simulate the cache write requested by this test. */
       put: async (key) => {
         writes.push(key);
         if (key.startsWith(SNAPSHOT_KEY_PREFIX)) {
@@ -280,7 +314,11 @@ test('snapshot refresh shares the first timestamp and waits for complete data be
   });
   fetchStub.fetch = async (url, options) => {
     if (url.includes('/toptraded/')) discoveryCalls++;
-    return { ok: true, json: async () => payload(url, options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => payload(url, options),
+    };
   };
   try {
     const firstTime = new Date('2026-10-13T12:00:00Z');
@@ -314,6 +352,7 @@ test('failed snapshot data write never advances the pointer and the refresh can 
   let failWrite = true;
   const env = testEnv({
     SNAPSHOTS: {
+      /** Observe or simulate the cache write requested by this test. */
       put: async (key) => {
         writes.push(key);
         if (failWrite) throw new Error('data write failed');
@@ -322,6 +361,7 @@ test('failed snapshot data write never advances the pointer and the refresh can 
   });
   fetchStub.fetch = async (url, options) => ({
     ok: true,
+    /** Return the controlled JSON payload for this provider-response fixture. */
     json: async () => payload(url, options),
   });
   try {
@@ -359,7 +399,11 @@ test('direct and on-traffic dashboard refreshes share work, while bindings and s
         confirmedCalls++;
     }
     await gate.promise;
-    return { ok: true, json: async () => payload(url, options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => payload(url, options),
+    };
   };
   try {
     const direct = refreshHeliusDashboardSample(env, config);
@@ -404,7 +448,11 @@ test('overlapping dashboard refreshes preserve the first caller fallback and tim
         return { ok: false, status: 400 };
       }
     }
-    return { ok: true, json: async () => payload(url, options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => payload(url, options),
+    };
   };
   try {
     const previous = {
@@ -450,6 +498,7 @@ test('DefiLlama refreshes share reads and publication only in the same binding',
   let writes = 0;
   const env = testEnv({
     SNAPSHOTS: {
+      /** Observe or simulate the cache write requested by this test. */
       put: async () => {
         writes++;
       },
@@ -460,6 +509,7 @@ test('DefiLlama refreshes share reads and publication only in the same binding',
     await gate.promise;
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => (url.includes('/overview/') ? { protocols: [] } : []),
     };
   };
@@ -488,7 +538,11 @@ test('concurrent mint-detail responses keep request IDs separate while sharing J
   fetchStub.fetch = async (url, options) => {
     calls++;
     await gate.promise;
-    return { ok: true, json: async () => payload(url, options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => payload(url, options),
+    };
   };
   try {
     const url = `https://api.example/v3/assets/mint/${otherMint}?includeHistory=false`;

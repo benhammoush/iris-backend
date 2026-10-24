@@ -1,5 +1,11 @@
+/**
+ * Environment validation and effective runtime configuration.
+ * @packageDocumentation
+ */
+
 import type { WorkerVariables } from './env.ts';
 
+/** Effective Worker environment, origins and provider configuration. */
 export interface WorkerConfig {
   corsOrigins: string[];
   heliusApiKey: string;
@@ -8,6 +14,7 @@ export interface WorkerConfig {
   providerMode: 'cache-only' | 'live';
 }
 
+/** Effective upstream-provider options resolved from environment bindings. */
 export type ProviderConfig = Partial<
   Pick<
     WorkerConfig,
@@ -15,6 +22,7 @@ export type ProviderConfig = Partial<
   >
 >;
 
+/** Resolve the Worker configuration from the current environment bindings. */
 export function getConfig(env: WorkerVariables): WorkerConfig {
   return {
     corsOrigins: (env.CORS_ORIGINS || '')

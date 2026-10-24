@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for provider request.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -9,6 +14,7 @@ import { heliusRpc } from '../../src/v3.ts';
 const url = 'https://provider.test/read?api-key=never-print-this';
 const options = { provider: 'Test provider' };
 
+/** Flush queued promise callbacks without introducing real timing delays. */
 async function drainMicrotasks() {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
@@ -73,6 +79,7 @@ test('both attempts and delay share one deadline', async (t) => {
   assert.equal(calls, 2);
 });
 
+/** Capture the classified provider failure produced by the fixture. */
 function classified(kind: string, status: number | null = null) {
   return (error: unknown) => {
     assert.ok(error instanceof ProviderRequestError);
@@ -220,7 +227,12 @@ test('deadline includes pending fetch and body parsing even when a transport ign
       async (_input: string | URL | Request, init?: RequestInit) => {
         signal = init?.signal;
         if (pendingBody)
-          return new Response(new ReadableStream({ start() {} }));
+          return new Response(
+            new ReadableStream({
+              /** Drive the controlled stream fixture used by this response-boundary test. */
+              start() {},
+            }),
+          );
         return new Promise<Response>(() => {});
       },
     );

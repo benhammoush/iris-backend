@@ -1,3 +1,8 @@
+/**
+ * Structured, correlation-aware diagnostics without raw provider payloads.
+ * @packageDocumentation
+ */
+
 // Only allowlisted labels and bounded scalar values cross the logging boundary.
 // Never serialize errors, URLs, headers, payloads or single-flight keys.
 const operations = new Set([
@@ -50,7 +55,9 @@ const rpcMethods = new Set([
   'getBlock',
 ]);
 const failures = new Set(['http', 'network', 'timeout', 'json']);
+/** Supported operation outcome categories for aggregation or diagnostics. */
 type Outcome = 'completed' | 'failed' | 'retry' | 'fallback';
+/** Allowlisted structured diagnostic fields; raw provider payloads are not retained. */
 interface Diagnostic {
   event: 'request' | 'refresh' | 'provider' | 'operation';
   operation: string;
@@ -65,6 +72,7 @@ interface Diagnostic {
   cause?: unknown;
 }
 
+/** Normalize a correlation identifier before including it in diagnostics. */
 function correlation(value?: string) {
   return value &&
     /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16}(?:-[A-Z]{3})?)$/i.test(
@@ -74,6 +82,7 @@ function correlation(value?: string) {
     : null;
 }
 
+/** Classify a failure without retaining raw provider or credential-bearing payloads. */
 function failure(cause: unknown) {
   if (
     cause instanceof Error &&
@@ -87,6 +96,7 @@ function failure(cause: unknown) {
   return 'unknown';
 }
 
+/** Emit structured diagnostic metadata rather than raw request or provider bodies. */
 export function diagnostic(input: Diagnostic): void {
   try {
     const fields = {
@@ -133,6 +143,7 @@ export function diagnostic(input: Diagnostic): void {
   }
 }
 
+/** Represent unavailable data or configuration without treating it as an empty successful result. */
 export function unavailable(
   operation: string,
   provider: string,
@@ -151,6 +162,7 @@ export function unavailable(
   });
 }
 
+/** Record bounded refresh timing and outcome while preserving the operation result. */
 export async function refreshDiagnostic<T>(
   operation: string,
   work: () => Promise<T>,

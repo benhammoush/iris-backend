@@ -1,3 +1,8 @@
+/**
+ * Reject package, lockfile and runtime version identity drift.
+ * @file
+ */
+
 import { readFile } from 'node:fs/promises';
 
 const packageJson = JSON.parse(

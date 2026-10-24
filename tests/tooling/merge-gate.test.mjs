@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for merge gate.
+ * @file
+ */
+
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -284,7 +289,9 @@ test('collector checks a complete current candidate and detects mid-read pushes'
     const value = fixture();
     let reads = 0;
     const client = {
+      /** Resolve the native repository review evidence consumed by the merge gate. */
       native: async () => value.native,
+      /** Read the controlled cache or boundary value used by this assertion. */
       get: async (path) => {
         if (path.endsWith('/pulls/7'))
           return ++reads > 1 && race
@@ -307,6 +314,7 @@ test('same-head CI reruns, new reviews, statuses and conversations invalidate co
   for (const kind of ['rerun', 'review', 'status', 'thread']) {
     const value = fixture();
     let round = 0;
+    /** Build the changed-file fixture consumed by merge-policy checks. */
     const changed = () => {
       const copy = structuredClone(value);
       if (round > 1) {
@@ -327,7 +335,9 @@ test('same-head CI reruns, new reviews, statuses and conversations invalidate co
       return copy;
     };
     const client = {
+      /** Resolve the native repository review evidence consumed by the merge gate. */
       native: async () => changed().native,
+      /** Read the controlled cache or boundary value used by this assertion. */
       get: async (path) => {
         if (path.endsWith('/pulls/7')) return structuredClone(value.pr);
         if (path.includes('/workflows/ci.yml/runs?')) {
@@ -358,6 +368,7 @@ test('transport exposes reads and one fixed GraphQL query, with no write/retry/r
     calls.push({ url, ...options });
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => ({ data: { repository: { pullRequest: {} } } }),
     };
   });
@@ -400,6 +411,7 @@ test('GraphQL walkthrough collection preserves editor provenance and rejects tru
   for (const truncated of [false, true]) {
     const client = githubReader('fixture', async () => ({
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => ({
         data: {
           repository: {

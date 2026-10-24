@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for lint openapi.
+ * @packageDocumentation
+ */
+
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -29,6 +34,7 @@ const document = {
   },
 };
 
+/** Run the OpenAPI checker against the controlled document fixture. */
 function runDocument(value: unknown) {
   const directory = mkdtempSync(path.join(tmpdir(), 'iris-lint-'));
   try {

@@ -1,3 +1,8 @@
+/**
+ * Evaluate required checks, reviews and current-head evidence without merging the pull request.
+ * @file
+ */
+
 import { appendFile, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
@@ -247,6 +252,7 @@ export async function observe(client, number, policy) {
 /** Fixed-host read-only transport; no PR text, artifacts or candidate code is executed. */
 export function githubReader(token, fetcher = fetch) {
   if (!token) throw new Error('GITHUB_TOKEN required');
+  /** Perform the boundary request and translate unsuccessful responses into the caller-facing error contract. */
   const request = async (path, query) => {
     const response = await fetcher(`https://api.github.com${path}`, {
       method: query ? 'POST' : 'GET',
@@ -267,10 +273,12 @@ export function githubReader(token, fetcher = fetch) {
     return value;
   };
   return {
+    /** Read an authenticated GitHub REST endpoint restricted to repository paths. */
     get: (path) => {
       if (!path.startsWith('/repos/')) throw new Error('Unsupported read');
       return request(path);
     },
+    /** Resolve the native repository review evidence consumed by the merge gate. */
     native: async (repository, number) => {
       const [owner, name] = repository.split('/');
       const response = await request('/graphql', {

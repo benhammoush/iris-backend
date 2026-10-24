@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for production cors.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -10,6 +15,7 @@ const configuration = readFileSync(
 );
 const dashboardOrigin = 'https://iris-frontend-production.vercel.app';
 
+/** Build isolated environment bindings for the exercised request. */
 function env(environment: string) {
   const section = configuration
     .split(`[env.${environment}.vars]`)[1]

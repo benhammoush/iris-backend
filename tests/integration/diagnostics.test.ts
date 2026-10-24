@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for diagnostics.
+ * @packageDocumentation
+ */
+
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -19,10 +24,17 @@ import { SOL_MINT, SNAPSHOT_POINTER_KEY } from '../../src/constants.ts';
 const secret = 'SECRET_NEVER_LOG';
 const privateUrl = `https://provider.test/${secret}?api-key=${secret}`;
 const id = '12345678-1234-1234-1234-123456789abc';
+/** Build isolated environment bindings for the exercised request. */
 const env = () => ({
-  SNAPSHOTS: { get: async () => null, put: async () => {} },
+  SNAPSHOTS: {
+    /** Read the controlled cache or boundary value used by this assertion. */
+    get: async () => null,
+    /** Observe or simulate the cache write requested by this test. */
+    put: async () => {},
+  },
   PROVIDER_MODE: 'cache-only',
 });
+/** Capture diagnostic records for assertions using the test-owned mock lifecycle. */
 function capture(t: TestContext) {
   const logs: Record<string, unknown>[] = [];
   t.mock.method(console, 'info', (value: unknown) => logs.push(record(value)));
@@ -30,6 +42,7 @@ function capture(t: TestContext) {
   t.mock.method(console, 'error', (value: unknown) => logs.push(record(value)));
   return logs;
 }
+/** Flush queued asynchronous fixture work before asserting its outcome. */
 async function drain() {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
 }
@@ -124,6 +137,7 @@ test('diagnostic sink and hostile error getters cannot alter work or failures', 
   });
   const cause = new Error(secret);
   Object.defineProperty(cause, 'name', {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: () => {
       throw new Error(secret);
     },
@@ -316,9 +330,11 @@ test('route exceptions preserve public envelopes while logs omit cache errors', 
     {
       ...env(),
       SNAPSHOTS: {
+        /** Read the controlled cache or boundary value used by this assertion. */
         get: async () => {
           throw new Error(privateUrl);
         },
+        /** Observe or simulate the cache write requested by this test. */
         put: async () => {},
       },
     },
@@ -401,9 +417,11 @@ test('authenticated and scheduled refresh failures preserve envelope/rejection a
     ...env(),
     REFRESH_TOKEN: secret,
     SNAPSHOTS: {
+      /** Read the controlled cache or boundary value used by this assertion. */
       get: async () => {
         throw cause;
       },
+      /** Observe or simulate the cache write requested by this test. */
       put: async () => {},
     },
   };
@@ -502,7 +520,9 @@ test('throwing diagnostic sinks cannot interrupt retries or snapshot-before-poin
     HELIUS_API_KEY: secret,
     JUPITER_API_KEY: secret,
     SNAPSHOTS: {
+      /** Read the controlled cache or boundary value used by this assertion. */
       get: async () => null,
+      /** Observe or simulate the cache write requested by this test. */
       put: async (key: string, value: string) => {
         writes.push({ key, value });
       },

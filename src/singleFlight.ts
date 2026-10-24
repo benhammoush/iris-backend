@@ -1,6 +1,12 @@
+/**
+ * Binding- and configuration-scoped sharing of equivalent in-flight work.
+ * @packageDocumentation
+ */
+
 import type { Env } from './env.ts';
 import type { ProviderConfig } from './config.ts';
 
+/** Supported primitive component of a collision-safe shared-work key. */
 type KeyPart = string | number | boolean | null | undefined | object;
 const pending = new WeakMap<object, Map<string, Promise<unknown>>>();
 const identities = new WeakMap<object, number>();
@@ -8,6 +14,7 @@ let nextIdentity = 0;
 
 // Keys stay in isolate memory only. Object/function parts compare by identity;
 // primitive parts are encoded without delimiter or null/undefined collisions.
+/** Encode a key component without allowing adjacent values to collide. */
 function encode(part: KeyPart) {
   if (
     part !== null &&
@@ -23,6 +30,7 @@ function encode(part: KeyPart) {
   return [typeof part, part];
 }
 
+/** Share equivalent in-flight work only within the supplied scope; discard the entry after completion. */
 export function singleFlight<T>(
   scope: object | null | undefined,
   parts: readonly KeyPart[],
@@ -49,6 +57,7 @@ export function singleFlight<T>(
   return result;
 }
 
+/** Include effective provider configuration in shared-work identity to prevent cross-configuration reuse. */
 export function providerKey(env: Env, config: ProviderConfig) {
   return [
     config.heliusApiKey || env.HELIUS_API_KEY,

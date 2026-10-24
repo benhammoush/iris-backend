@@ -1,3 +1,8 @@
+/**
+ * Public resource routing, cache policy and response-contract adaptation.
+ * @packageDocumentation
+ */
+
 import {
   API_VERSION,
   CANDLE_KEY_PREFIX,
@@ -38,8 +43,11 @@ import { array, record, isRecord } from './record.ts';
 import type { Env } from './env.ts';
 import type { WorkerConfig } from './config.ts';
 
+/** Cache binding operations needed by historical candle resources. */
 interface CandleCache {
+  /** Read the cached candle entry as JSON before resource-specific validation. */
   get: (key: string, type: 'json') => Promise<unknown>;
+  /** Persist the cache entry using the supplied key and optional expiry policy. */
   put?: (
     key: string,
     value: string,
@@ -47,17 +55,20 @@ interface CandleCache {
   ) => Promise<unknown>;
 }
 
+/** Validate and normalize a timestamp before using it in the response contract. */
 function dateString(value: unknown): string | null {
   return typeof value === 'string' && Number.isFinite(Date.parse(value))
     ? value
     : null;
 }
 
+/** Read the classified error code or use the explicit fallback. */
 function failureCode(value: unknown, fallback: string): string {
   const code = record(value).code;
   return typeof code === 'string' && code ? code : fallback;
 }
 
+/** Check historical candle data before serving it from cache. */
 function usableCandles(history: unknown): history is Record<string, unknown> & {
   fetchedAt: string;
   candles: unknown[];
@@ -70,6 +81,7 @@ function usableCandles(history: unknown): history is Record<string, unknown> & {
   );
 }
 
+/** Resolve and cache candle data under the requested provider mode and time window. */
 async function candlesWork(
   kv: CandleCache | null | undefined,
   mint: string,
@@ -187,6 +199,7 @@ async function candlesWork(
   }
 }
 
+/** Coalesce identical candle requests using the cache binding and complete query identity. */
 export function candlesForAsset(
   kv: CandleCache | null | undefined,
   mint: string,
@@ -210,6 +223,7 @@ export function candlesForAsset(
   );
 }
 
+/** Adapt the legacy history range to the asset candle contract. */
 export async function historyForAsset(
   kv: CandleCache | null | undefined,
   mint: string,
@@ -245,6 +259,7 @@ export async function historyForAsset(
   };
 }
 
+/** Build v3 response metadata while preserving freshness and history availability. */
 function v3Meta(meta: Record<string, unknown>, historyValue: unknown = null) {
   const history = record(historyValue);
   return {
@@ -262,6 +277,7 @@ function v3Meta(meta: Record<string, unknown>, historyValue: unknown = null) {
   };
 }
 
+/** Normalize a swap into the v3 response contract. */
 function v3Swap(value: unknown) {
   const swap = record(value);
   const input = record(swap.input);
@@ -288,6 +304,7 @@ function v3Swap(value: unknown) {
   };
 }
 
+/** Dispatch the validated public API request to its resource handler. */
 export async function route(
   request: Pick<Request, 'url'>,
   env: Env,
@@ -363,6 +380,7 @@ export async function route(
       (Math.floor(Date.now() / REFRESH_INTERVAL_MS) + 1) * REFRESH_INTERVAL_MS,
     ).toISOString(),
   };
+  /** Build explicit cache lifetimes including the allowed stale-revalidation window. */
   const cacheHeaders = (maxAge: number, staleWhileRevalidate: number) => ({
     'cache-control': `public, max-age=${maxAge}, s-maxage=${maxAge}, stale-while-revalidate=${staleWhileRevalidate}`,
     vary: 'Origin',

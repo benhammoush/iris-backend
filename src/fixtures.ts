@@ -1,7 +1,13 @@
+/**
+ * Explicit deterministic fixture data, not evidence of live-provider availability.
+ * @packageDocumentation
+ */
+
 import { assetIdentity } from './transforms.ts';
 import { SOL_MINT } from './constants.ts';
 
 export const MARKET_SNAPSHOT_AS_OF = '2025-06-30T00:00:00.000Z';
+/** Build deterministic asset data for the explicit fixture snapshot. */
 function staticAsset(
   symbol: string,
   name: string,

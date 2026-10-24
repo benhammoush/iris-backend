@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for network.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { record } from '../../src/record.ts';
@@ -83,6 +88,7 @@ test('failed network groups retain prior values as stale without substituting ze
 
 test('network refresh uses the latest actual finalized block for average fees', async () => {
   const calls: [string, unknown[]][] = [];
+  /** Record the requested RPC method and return its controlled fixture response. */
   const rpc: Rpc = async (method, params) => {
     calls.push([method, params]);
     if (method === 'getSlot')
@@ -137,6 +143,7 @@ test('network refresh uses the latest actual finalized block for average fees', 
 });
 
 test('supply remains available when inflation data is unavailable', () => {
+  /** Build the fulfilled result wrapper used by the aggregation fixture. */
   const fulfilled = (value: unknown) => ({
     status: 'fulfilled' as const,
     value,
@@ -172,6 +179,7 @@ test('supply remains available when inflation data is unavailable', () => {
 
 test('network refresh falls back to the finalized slot when the block list is empty', async () => {
   const calls: [string, unknown[]][] = [];
+  /** Record the requested RPC method and return its controlled fixture response. */
   const rpc: Rpc = async (method, params) => {
     calls.push([method, params]);
     if (method === 'getSlot') return 1000;

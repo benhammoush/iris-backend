@@ -1,3 +1,8 @@
+/**
+ * Bounded market discovery, provider normalization and candle retrieval.
+ * @packageDocumentation
+ */
+
 import {
   CANDLE_PAGE_SIZE,
   MAX_CATALOG_ASSETS,
@@ -8,14 +13,17 @@ import { assetIdentity } from './transforms.ts';
 import { isRecord } from './record.ts';
 import { providerJson } from './providerRequest.ts';
 
+/** Narrow an unknown boundary value to a record, using an empty record when it is not an object. */
 function record(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
 }
 
+/** Normalize an unknown collection to an array before iterating it. */
 function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+/** Normalize an unknown scalar to the supported string representation. */
 function string(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
@@ -23,6 +31,7 @@ function string(value: unknown): string | null {
 const JUPITER = 'https://api.jup.ag';
 const BIRDEYE = 'https://public-api.birdeye.so';
 
+/** Fetch provider JSON through the bounded request and error-classification boundary. */
 async function fetchJson(
   url: string,
   apiKey: string | undefined,
@@ -35,6 +44,7 @@ async function fetchJson(
   );
 }
 
+/** Map provider work with a bounded worker pool instead of unbounded parallel requests. */
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -42,6 +52,7 @@ async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
+  /** Drain queued items while respecting the shared concurrency limit. */
   async function worker() {
     while (nextIndex < items.length) {
       const index = nextIndex;
@@ -55,6 +66,7 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** Normalize the token record into the market asset contract. */
 function tokenAsset(token: Record<string, unknown>) {
   const mint = string(token.id) || string(token.address) || string(token.mint);
   if (!mint) return null;
@@ -94,12 +106,15 @@ function tokenAsset(token: Record<string, unknown>) {
   };
 }
 
+/** Normalized market asset with exact identity and explicitly nullable metrics. */
 export type MarketAsset = NonNullable<ReturnType<typeof tokenAsset>>;
 
+/** Normalize finite numeric provider values and preserve unavailable data as null. */
 function finiteOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** Map upstream asset data into the v3 contract without fabricating unavailable metrics. */
 export function mapV3Asset(value: unknown) {
   const token = record(value);
   const mint = string(token.id) || string(token.mint) || null;
@@ -157,6 +172,7 @@ export function mapV3Asset(value: unknown) {
   };
 }
 
+/** Extract provider result items from the supported response envelope shapes. */
 function payloadItems(payload: unknown): Record<string, unknown>[] {
   const items = Array.isArray(payload)
     ? array(payload)
@@ -164,6 +180,7 @@ function payloadItems(payload: unknown): Record<string, unknown>[] {
   return items.filter(isRecord);
 }
 
+/** Resolve a token by mint through the configured provider. */
 export async function tokenByMint(mint: string, apiKey?: string) {
   const items = payloadItems(
     await fetchJson(
@@ -178,6 +195,7 @@ export async function tokenByMint(mint: string, apiKey?: string) {
   );
 }
 
+/** Filter and normalize discovered tokens according to the catalog verification policy. */
 function catalogTokens(tokens: Record<string, unknown>[], verifiedOnly = true) {
   const byMint = new Map<string, Record<string, unknown>>();
   for (const token of tokens) {
@@ -194,6 +212,7 @@ function catalogTokens(tokens: Record<string, unknown>[], verifiedOnly = true) {
   return [...byMint.values()].slice(0, MAX_CATALOG_ASSETS);
 }
 
+/** Refresh bounded market discovery and normalize available asset metrics. */
 export async function refreshMarket(
   apiKey?: string,
   candidateMints: string[] | null = null,
@@ -239,6 +258,7 @@ export async function refreshMarket(
   }
 }
 
+/** Load one discovery catalog and apply its minimum-volume boundary. */
 async function refreshDiscoveryCatalog(
   apiKey: string,
   path: string,
@@ -263,6 +283,7 @@ async function refreshDiscoveryCatalog(
   }
 }
 
+/** Refresh the configured discovery catalogs without merging their identities. */
 export async function refreshDiscoveryCatalogs(apiKey?: string) {
   if (!apiKey) return { trending: [], recent: [] };
   const [trending, recent] = await Promise.all([
@@ -301,18 +322,22 @@ const legacyHistoryPlans: Record<
   '7d': { timeframe: '1H', durationMs: 7 * 24 * 60 * 60 * 1000 },
 };
 
+/** Resolve provider interval and request sizing for the requested candle timeframe. */
 export function candlePlan(timeframe: string) {
   return CANDLE_TIMEFRAMES.includes(timeframe) ? { timeframe } : null;
 }
 
+/** Translate a legacy history range into the supported candle request plan. */
 export function legacyHistoryPlan(range: string) {
   return legacyHistoryPlans[range] || null;
 }
 
+/** Accept only finite numeric values from the provider boundary. */
 function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** Normalize one provider candle and reject unusable OHLC data. */
 function birdeyeCandle(value: unknown) {
   const item = record(value);
   const unixTime = item?.unix_time;
@@ -352,6 +377,7 @@ function birdeyeCandle(value: unknown) {
   };
 }
 
+/** Fetch bounded historical candles for the requested mint, timeframe and end time. */
 export async function fetchCandles(
   mint: string,
   apiKey?: string,

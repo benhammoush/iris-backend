@@ -1,3 +1,8 @@
+/**
+ * Shared Solana identity, cache keys, freshness windows and bounded discovery limits.
+ * @packageDocumentation
+ */
+
 export const API_VERSION = '3.16.0';
 export const CHAIN = 'solana';
 export const SOL_MINT = 'So11111111111111111111111111111111111111112';

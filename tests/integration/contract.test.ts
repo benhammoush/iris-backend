@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for contract.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -25,12 +30,14 @@ ajv.addSchema({
   components: { schemas: record(record(document).components).schemas },
 });
 
+/** Resolve the schema validator for the contract under test. */
 function validator(name: string) {
   return ajv.compile({
     $ref: `https://iris.test/contract#/components/schemas/${name}`,
   });
 }
 
+/** Build the controlled response envelope expected by this test. */
 function envelope(data: unknown) {
   return { data, meta: { requestId: 'contract-test' } };
 }
@@ -38,7 +45,12 @@ function envelope(data: unknown) {
 test('canonical fixture and unavailable responses match their declared envelopes', async () => {
   const env: Env = {
     PROVIDER_MODE: 'cache-only',
-    SNAPSHOTS: { get: async () => null, put: async () => {} },
+    SNAPSHOTS: {
+      /** Read the controlled cache or boundary value used by this assertion. */
+      get: async () => null,
+      /** Observe or simulate the cache write requested by this test. */
+      put: async () => {},
+    },
   };
   const cases = [
     ['/health', 'HealthEnvelope'],
@@ -209,7 +221,12 @@ test('fresh Helius profile, holder, distribution and transaction serializers mat
   );
   const env: Env = {
     HELIUS_API_KEY: 'test-key',
-    SNAPSHOTS: { get: async () => null, put: async () => {} },
+    SNAPSHOTS: {
+      /** Read the controlled cache or boundary value used by this assertion. */
+      get: async () => null,
+      /** Observe or simulate the cache write requested by this test. */
+      put: async () => {},
+    },
   };
   for (const [suffix, schema] of [
     ['onchain', 'OnchainAssetEnvelope'],
