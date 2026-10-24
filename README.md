@@ -24,8 +24,8 @@ sequenceDiagram
     participant Cache
     participant Providers as Data providers
 
-    User->>Dashboard: Browse markets, tokens or wallets
-    Dashboard->>API: Request data
+    User->>Dashboard: Inspect a token or public wallet
+    Dashboard->>API: Request on-demand data
     API->>Cache: Look for fresh data
     alt Fresh data available
         Cache-->>API: Return cached data
