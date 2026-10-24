@@ -105,4 +105,8 @@ export default [
     files: ['*.mjs', 'scripts/**', 'tests/**'],
     languageOptions: { globals: globals.node },
   },
+  {
+    files: ['**/*.tsx'],
+    rules: { 'no-undef': 'off' },
+  },
 ];

@@ -153,21 +153,16 @@ test('parses typed TSX before applying documentation rules', async () => {
   const filePath = 'src/documentation-fixture.tsx';
   const [result] = await eslint.lintText(
     header +
-      '/** Render fixture. */ const Component = (props: { label: string }) => <div>{props.label}</div>;',
+      '/** Render fixture. */ export const Component = (props: { label: string; timer?: NodeJS.Timeout }) => <div>{props.label}</div>;',
     { filePath },
   );
   assert.equal(result.fatalErrorCount, 0);
-  assert.deepEqual(
-    result.messages.filter((message) =>
-      /^(jsdoc\/|tsdoc\/)/.test(message.ruleId ?? ''),
-    ),
-    [],
-  );
+  assert.deepEqual(result.messages, []);
   assert.ok(
     (
       await errors(
         header +
-          'const Component = (props: { label: string }) => <div>{props.label}</div>;',
+          'export const Component = (props: { label: string; timer?: NodeJS.Timeout }) => <div>{props.label}</div>;',
         filePath,
       )
     ).includes('jsdoc/require-jsdoc'),
