@@ -76,10 +76,3 @@ export function assetIdentity(mint: string) {
     isNative: mint === SOL_MINT,
   };
 }
-
-export function priceChangePercent(
-  actualPrice: number,
-  previousPrice: number,
-): number {
-  return ((actualPrice - previousPrice) / previousPrice) * 100;
-}

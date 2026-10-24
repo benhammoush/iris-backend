@@ -402,20 +402,4 @@ export async function fetchCandles(
   return candles.length ? { timeframe: plan.timeframe, candles } : null;
 }
 
-export async function fetchPriceHistory(
-  mint: string,
-  apiKey?: string,
-  range = '7d',
-) {
-  const plan = legacyHistoryPlan(range);
-  if (!plan) throw new Error('Unsupported price-history range.');
-  const result = await fetchCandles(mint, apiKey, plan.timeframe);
-  const cutoff = Date.now() - plan.durationMs;
-  return (
-    result?.candles
-      .filter((candle) => Date.parse(candle.timestamp) >= cutoff)
-      .map((candle) => ({ date: candle.timestamp, price: candle.closeUsd })) ||
-    null
-  );
-}
 import { unavailable } from './diagnostics.ts';
