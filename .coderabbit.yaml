@@ -4,3 +4,6 @@ reviews:
   high_level_summary: false
   request_changes_workflow: true
   allow_author_approval: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true

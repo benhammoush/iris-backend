@@ -20,8 +20,8 @@ void test('check owns every CI quality stage exactly once and ends in a dry-run 
     'npm run format:check',
     'npm run check:tooling',
     'npm run audit:dependencies',
-    'npm run check:versions',
-    'npm run check:types',
+    'npm run check:version',
+    'npm run typecheck',
     'npm run lint:openapi',
     'npm test',
     'npm run test:merge-policy',
@@ -42,6 +42,8 @@ void test('check owns every CI quality stage exactly once and ends in a dry-run 
     /^benhammoush\/ci-cd-workflows\/\.github\/workflows\/verify-worker.yml@[a-f0-9]{40}$/,
   );
   assert.equal(scripts['ci:quality'], 'npm run check');
+  assert.equal(scripts.typecheck, scripts['check:types']);
+  assert.equal(scripts['check:version'], scripts['check:versions']);
   assert.equal(record(jobs.verify_result).name, 'Verify');
   assert.equal(record(jobs.verify_result).needs, 'verify');
 });

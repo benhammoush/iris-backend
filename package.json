@@ -4,8 +4,10 @@
   "description": "Iris market and curated-wallet API on Cloudflare Workers",
   "type": "module",
   "main": "src/index.ts",
+  "packageManager": "npm@11.19.0",
   "engines": {
-    "node": "22.x"
+    "node": "22.x",
+    "npm": "11.19.0"
   },
   "scripts": {
     "ci:quality": "npm run check",
@@ -21,11 +23,13 @@
     "e2e:serve": "npm run seed:e2e && npm run dev:e2e",
     "test": "node scripts/test.mjs",
     "test:merge-policy": "node --test tests/tooling/merge-gate.test.mjs",
+    "typecheck": "tsc --noEmit",
     "check:types": "tsc --noEmit",
+    "check:version": "node scripts/check-version.mjs",
     "check:versions": "node scripts/check-version.mjs",
     "lint:openapi": "node scripts/lint-openapi.mjs openapi.yaml",
     "build": "wrangler deploy --dry-run --env production",
-    "check": "npm run lint && npm run format:check && npm run check:tooling && npm run audit:dependencies && npm run check:versions && npm run check:types && npm run lint:openapi && npm test && npm run test:merge-policy && npm run build"
+    "check": "npm run lint && npm run format:check && npm run check:tooling && npm run audit:dependencies && npm run check:version && npm run typecheck && npm run lint:openapi && npm test && npm run test:merge-policy && npm run build"
   },
   "license": "ISC",
   "devDependencies": {
