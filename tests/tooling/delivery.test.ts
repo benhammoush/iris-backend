@@ -10,15 +10,22 @@ import { readFileSync } from 'node:fs';
 import config from '../../.github/ci-cd.json' with { type: 'json' };
 
 const workflow = readFileSync(
-  new URL('../../.github/workflows/ci.yml', import.meta.url),
+  new URL('../../.github/workflows/verify-and-deploy-dev.yml', import.meta.url),
   'utf8',
 );
 const production = readFileSync(
-  new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+  new URL(
+    '../../.github/workflows/verify-and-deploy-prod.yml',
+    import.meta.url,
+  ),
   'utf8',
 );
 const configuration = readFileSync(
   new URL('../../wrangler.toml', import.meta.url),
+  'utf8',
+);
+const pr = readFileSync(
+  new URL('../../.github/workflows/verify-pr.yml', import.meta.url),
   'utf8',
 );
 
@@ -40,11 +47,11 @@ void test('release entry points use the same immutable shared guards without an 
 void test('delivery preserves target-scoped credentials and refresh semantics with the canonical Verify check', () => {
   assert.deepEqual(config.legacyChecks, []);
   assert.match(
-    workflow,
-    /verify_result:\s+name: Verify\s+needs: verify\s+if: always\(\)/,
+    pr,
+    /verify_result:\s+(?:#[^\n]*\s+)?name: Verify\s+needs: verify\s+if: always\(\)/,
   );
-  assert.ok(workflow.includes('test "$VERIFY_RESULT" = success'));
-  assert.ok(workflow.includes('VERIFY_RESULT: ${{ needs.verify.result }}'));
+  assert.ok(pr.includes('test "$VERIFY_RESULT" = success'));
+  assert.ok(pr.includes('VERIFY_RESULT: ${{ needs.verify.result }}'));
   assert.doesNotMatch(workflow, /legacy_\d+:/);
   assert.ok(workflow.includes('refresh_dev:'));
   const adapter = readFileSync(

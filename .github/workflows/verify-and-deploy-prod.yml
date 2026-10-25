@@ -1,6 +1,6 @@
 # Manually verifies and releases an exact dev-accepted source revision to production.
 # Calls shared CI/CD workflows with native environment approval.
-name: Deploy production
+name: Verify and deploy to prod
 on:
   workflow_dispatch:
     inputs:
@@ -13,20 +13,20 @@ permissions:
   actions: read
 jobs:
   verify_release:
-    name: Verify production
-    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@64b5e00a3d2895a8cba05b040f0d5a0415613d9e
+    name: Production checks
+    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@d1143395dc6a078ef284978c1daf039ed06ff7d1
     with:
-      automation_sha: 64b5e00a3d2895a8cba05b040f0d5a0415613d9e
+      automation_sha: d1143395dc6a078ef284978c1daf039ed06ff7d1
       source_sha: ${{ inputs.sha }}
       environment: production
       node_version: '22'
   deploy_production:
-    name: Deploy production
+    name: Production delivery
     needs: verify_release
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
-    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@64b5e00a3d2895a8cba05b040f0d5a0415613d9e
+    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@d1143395dc6a078ef284978c1daf039ed06ff7d1
     with:
-      automation_sha: 64b5e00a3d2895a8cba05b040f0d5a0415613d9e
+      automation_sha: d1143395dc6a078ef284978c1daf039ed06ff7d1
       source_sha: ${{ inputs.sha }}
       environment: production
       node_version: '22'
