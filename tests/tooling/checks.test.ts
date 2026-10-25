@@ -31,7 +31,7 @@ void test('check owns every CI quality stage exactly once and ends in a dry-run 
   const workflow = record(
     parse(
       readFileSync(
-        new URL('../../.github/workflows/ci.yml', import.meta.url),
+        new URL('../../.github/workflows/verify-pr.yml', import.meta.url),
         'utf8',
       ),
     ),

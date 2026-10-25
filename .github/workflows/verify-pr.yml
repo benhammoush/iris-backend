@@ -1,0 +1,27 @@
+# Verifies pull requests without deployment jobs or credentials.
+# The standalone Verify result preserves the existing required-check context.
+name: Verify PR
+on:
+  pull_request: null
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    name: PR checks
+    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@d1143395dc6a078ef284978c1daf039ed06ff7d1
+    with:
+      automation_sha: d1143395dc6a078ef284978c1daf039ed06ff7d1
+      source_sha: ${{ github.sha }}
+      environment: dev
+      node_version: '22'
+  verify_result:
+    name: Verify
+    needs: verify
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require successful PR checks
+        run: test "$VERIFY_RESULT" = success
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}

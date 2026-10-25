@@ -67,7 +67,7 @@ export function evaluate(value, policy) {
   if (
     policy.mode !== 'manual' ||
     policy.base !== 'main' ||
-    policy.workflow !== 'ci.yml' ||
+    policy.workflow !== 'verify-pr.yml' ||
     !Array.isArray(policy.jobs) ||
     !policy.jobs.length ||
     new Set(policy.jobs).size !== policy.jobs.length

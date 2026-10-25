@@ -46,7 +46,7 @@ function fixture() {
       run_attempt: 1,
       head_sha: head,
       event: 'pull_request',
-      path: '.github/workflows/ci.yml',
+      path: '.github/workflows/verify-pr.yml',
       status: 'completed',
       conclusion: 'success',
       pull_requests: [{ number: 7, head: { sha: head }, base: { sha: base } }],
@@ -304,7 +304,7 @@ test('collector checks a complete current candidate and detects mid-read pushes'
           return ++reads > 1 && race
             ? { ...value.pr, head: { ...value.pr.head, sha: base } }
             : value.pr;
-        if (path.includes('/workflows/ci.yml/runs?'))
+        if (path.includes('/workflows/verify-pr.yml/runs?'))
           return { workflow_runs: [value.run] };
         if (path.includes('/runs/1/jobs?')) return { jobs: value.jobs };
         if (path.includes('/reviews?')) return value.reviews;
@@ -354,7 +354,7 @@ test('same-head CI reruns, new reviews, statuses and conversations invalidate co
        */
       get: async (path) => {
         if (path.endsWith('/pulls/7')) return structuredClone(value.pr);
-        if (path.includes('/workflows/ci.yml/runs?')) {
+        if (path.includes('/workflows/verify-pr.yml/runs?')) {
           round++;
           return { workflow_runs: [changed().run] };
         }
@@ -411,10 +411,10 @@ test('retired merge observer has no workflow entry point', () => {
     { code: 'ENOENT' },
   );
   const ci = readFileSync(
-    new URL('../../.github/workflows/ci.yml', import.meta.url),
+    new URL('../../.github/workflows/verify-pr.yml', import.meta.url),
     'utf8',
   );
-  assert.match(ci, /^name: CI$/m);
+  assert.match(ci, /^name: Verify PR$/m);
 });
 
 test('GraphQL walkthrough collection preserves editor provenance and rejects truncated evidence', async () => {
