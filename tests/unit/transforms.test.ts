@@ -14,13 +14,13 @@ import {
   isBase58PublicKey,
 } from '../../src/transforms.ts';
 
-test('Solana public keys require a Base58-encoded 32-byte value', () => {
+void test('Solana public keys require a Base58-encoded 32-byte value', () => {
   assert.equal(isBase58PublicKey(SOL_MINT), true);
   assert.equal(isBase58PublicKey('not-a-public-key'), false);
   assert.equal(isBase58PublicKey('0'.repeat(32)), false);
 });
 
-test('atomic token amounts remain strings and format without Number conversion', () => {
+void test('atomic token amounts remain strings and format without Number conversion', () => {
   assert.equal(
     formatAtomicAmount('9007199254740993123', 6),
     '9007199254740.993123',
@@ -37,7 +37,7 @@ test('atomic token amounts remain strings and format without Number conversion',
   });
 });
 
-test('atomic helpers reject invalid values without substituting zero', () => {
+void test('atomic helpers reject invalid values without substituting zero', () => {
   for (const decimals of [null, undefined, '9', -1, 1.5, Infinity]) {
     assert.equal(formatAtomicAmount('1000000000', decimals), null);
   }
@@ -46,7 +46,7 @@ test('atomic helpers reject invalid values without substituting zero', () => {
   assert.equal(decimalValue(null), null);
 });
 
-test('atomic addition preserves exact integers and reports invalid inputs', () => {
+void test('atomic addition preserves exact integers and reports invalid inputs', () => {
   const amounts = ['9007199254740993123', '7'];
   assert.equal(
     addAtomicAmounts(amounts),

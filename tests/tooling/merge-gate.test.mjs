@@ -21,7 +21,9 @@ const policy = JSON.parse(
 );
 const head = 'a'.repeat(40),
   base = 'b'.repeat(40);
-/** Complete current-head/base evidence with no authority to execute a merge. */
+/** Complete current-head/base evidence with no authority to execute a merge.
+ * @returns Controlled candidate, CI, review and native-state evidence.
+ */
 function fixture() {
   const pr = {
     number: 7,
@@ -289,9 +291,14 @@ test('collector checks a complete current candidate and detects mid-read pushes'
     const value = fixture();
     let reads = 0;
     const client = {
-      /** Resolve the native repository review evidence consumed by the merge gate. */
+      /** Resolve the native repository review evidence consumed by the merge gate.
+       * @returns Controlled current-head and conversation evidence.
+       */
       native: async () => value.native,
-      /** Read the controlled cache or boundary value used by this assertion. */
+      /** Read the controlled GitHub evidence used by this assertion.
+       * @param path - Repository evidence path requested by the observer.
+       * @returns The selected fixture evidence, optionally racing the candidate identity.
+       */
       get: async (path) => {
         if (path.endsWith('/pulls/7'))
           return ++reads > 1 && race
@@ -314,7 +321,9 @@ test('same-head CI reruns, new reviews, statuses and conversations invalidate co
   for (const kind of ['rerun', 'review', 'status', 'thread']) {
     const value = fixture();
     let round = 0;
-    /** Build the changed-file fixture consumed by merge-policy checks. */
+    /** Build changed mutable evidence for race-detection checks.
+     * @returns A fresh evidence copy with the selected second-read change.
+     */
     const changed = () => {
       const copy = structuredClone(value);
       if (round > 1) {
@@ -335,9 +344,14 @@ test('same-head CI reruns, new reviews, statuses and conversations invalidate co
       return copy;
     };
     const client = {
-      /** Resolve the native repository review evidence consumed by the merge gate. */
+      /** Resolve the native repository review evidence consumed by the merge gate.
+       * @returns Controlled native evidence from the current read round.
+       */
       native: async () => changed().native,
-      /** Read the controlled cache or boundary value used by this assertion. */
+      /** Read the controlled GitHub evidence used by this assertion.
+       * @param path - Repository evidence path requested by the observer.
+       * @returns The selected fixture evidence from the current read round.
+       */
       get: async (path) => {
         if (path.endsWith('/pulls/7')) return structuredClone(value.pr);
         if (path.includes('/workflows/ci.yml/runs?')) {
@@ -368,7 +382,9 @@ test('transport exposes reads and one fixed GraphQL query, with no write/retry/r
     calls.push({ url, ...options });
     return {
       ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
+      /** Return the controlled JSON payload for this provider-response fixture.
+       * @returns An empty native candidate response for transport assertions.
+       */
       json: async () => ({ data: { repository: { pullRequest: {} } } }),
     };
   });
@@ -411,7 +427,9 @@ test('GraphQL walkthrough collection preserves editor provenance and rejects tru
   for (const truncated of [false, true]) {
     const client = githubReader('fixture', async () => ({
       ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
+      /** Return the controlled JSON payload for this provider-response fixture.
+       * @returns Comment provenance and controlled completeness evidence.
+       */
       json: async () => ({
         data: {
           repository: {

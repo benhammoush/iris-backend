@@ -7,6 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import config from '../../.github/ci-cd.json' with { type: 'json' };
 
 const workflow = readFileSync(
   new URL('../../.github/workflows/ci.yml', import.meta.url),
@@ -20,11 +21,8 @@ const configuration = readFileSync(
   new URL('../../wrangler.toml', import.meta.url),
   'utf8',
 );
-const config = JSON.parse(
-  readFileSync(new URL('../../.github/ci-cd.json', import.meta.url), 'utf8'),
-);
 
-test('release entry points use the same immutable shared guards without an automatic production trigger', () => {
+void test('release entry points use the same immutable shared guards without an automatic production trigger', () => {
   for (const file of [workflow, production]) {
     assert.ok(file.includes(`verify-worker.yml@${config.automationSha}`));
     assert.ok(file.includes(`deploy-worker.yml@${config.automationSha}`));
@@ -39,7 +37,7 @@ test('release entry points use the same immutable shared guards without an autom
   assert.doesNotMatch(production, /^ {2}(push|pull_request):/m);
 });
 
-test('delivery preserves target-scoped credentials and refresh semantics with the canonical Verify check', () => {
+void test('delivery preserves target-scoped credentials and refresh semantics with the canonical Verify check', () => {
   assert.deepEqual(config.legacyChecks, []);
   assert.match(
     workflow,
@@ -63,7 +61,7 @@ test('delivery preserves target-scoped credentials and refresh semantics with th
   );
 });
 
-test('Worker targets retain local isolation and production-only hourly Cron', () => {
+void test('Worker targets retain local isolation and production-only hourly Cron', () => {
   assert.doesNotMatch(configuration, /\[env\.staging(?:\]|\.)/);
   for (const target of ['local', 'e2e', 'dev', 'production'])
     assert.ok(configuration.includes(`[env.${target}]`));
@@ -81,7 +79,7 @@ test('Worker targets retain local isolation and production-only hourly Cron', ()
   }
 });
 
-test('hosted Workers bind distinct new namespaces, not retired resources', () => {
+void test('hosted Workers bind distinct new namespaces, not retired resources', () => {
   const namespaces = new Set<string>();
   const retired = new Set([
     '837c0562b3844757b252f0324dc70b74',
@@ -104,7 +102,7 @@ test('hosted Workers bind distinct new namespaces, not retired resources', () =>
   assert.equal(namespaces.size, 2);
 });
 
-test('hosted Workers explicitly disable version previews without disabling their APIs', () => {
+void test('hosted Workers explicitly disable version previews without disabling their APIs', () => {
   for (const target of ['dev', 'production']) {
     const worker = configuration.split(`[env.${target}]`)[1]?.split(/^\[/m)[0];
     assert.ok(worker);

@@ -6,8 +6,14 @@
 import assert from 'node:assert/strict';
 import test, { before } from 'node:test';
 import { ESLint } from 'eslint';
+import tseslint from 'typescript-eslint';
 
-const eslint = new ESLint();
+// Only virtual documentation fixtures lack a TS project entry.
+const eslint = new ESLint({
+  overrideConfig: [
+    { files: ['**/*.{ts,tsx}'], ...tseslint.configs.disableTypeChecked },
+  ],
+});
 const header =
   '/** Fixture module.\n * @packageDocumentation\n */\nimport "fixture";\n';
 // Cold parser/plugin loading belongs to bounded setup, not the per-fixture assertion budget.
@@ -17,7 +23,11 @@ before(
   },
   { timeout: 30_000 },
 );
-/** Collect only documentation failures, leaving unrelated fixture lint outside this assertion. */
+/** Collect only documentation failures, leaving unrelated fixture lint outside this assertion.
+ * @param source - In-memory source whose documentation is under test.
+ * @param filePath - Virtual path selecting the actual JS or TS rules.
+ * @returns Documentation-rule identifiers, rejecting parser/ignored-file failures.
+ */
 async function errors(
   source: string,
   filePath = 'src/documentation-fixture.ts',
@@ -47,19 +57,19 @@ for (const source of [
   'const Component = memo(() => null);',
   'const Component = React.forwardRef(() => null);',
 ]) {
-  test(`rejects an undocumented named contract: ${source}`, async () => {
+  void test(`rejects an undocumented named contract: ${source}`, async () => {
     assert.ok((await errors(header + source)).includes('jsdoc/require-jsdoc'));
   });
 }
 
-test('rejects malformed or ignored lint fixtures instead of silently passing', async () => {
+void test('rejects malformed or ignored lint fixtures instead of silently passing', async () => {
   await assert.rejects(() => errors('export const broken = ;'));
   await assert.rejects(() =>
     errors('export {};', 'dist/documentation-fixture.ts'),
   );
 });
 
-test('requires a separate module overview and function description', async () => {
+void test('requires a separate module overview and function description', async () => {
   assert.ok(
     (
       await errors('/** Read the fixture. */ function read() { return 1; }')
@@ -72,7 +82,7 @@ test('requires a separate module overview and function description', async () =>
   );
 });
 
-test('requires the TypeScript package overview to be initial and unique', async () => {
+void test('requires the TypeScript package overview to be initial and unique', async () => {
   assert.ok(
     (
       await errors(
@@ -89,7 +99,7 @@ test('requires the TypeScript package overview to be initial and unique', async 
   );
 });
 
-test('accepts documented contracts and exempts ordinary anonymous callbacks', async () => {
+void test('accepts documented contracts and exempts ordinary anonymous callbacks', async () => {
   for (const wrapper of [
     'memo',
     'React.memo',
@@ -99,7 +109,7 @@ test('accepts documented contracts and exempts ordinary anonymous callbacks', as
     assert.deepEqual(
       await errors(
         header +
-          `/** Render fixture. */ export const Component = ${wrapper}(() => null);`,
+          `/** Render fixture. */ export const Component = ${wrapper}(/** Render the fixture.\n * @returns The empty fixture view. */ () => null);`,
       ),
       [],
     );
@@ -113,7 +123,8 @@ test('accepts documented contracts and exempts ordinary anonymous callbacks', as
   }
   assert.deepEqual(
     await errors(
-      header + '/** Read the fixture identity. */ const read = () => "id";',
+      header +
+        '/** Read the fixture identity.\n * @returns The fixture identity. */ const read = () => "id";',
     ),
     [],
   );
@@ -125,7 +136,7 @@ test('accepts documented contracts and exempts ordinary anonymous callbacks', as
   );
 });
 
-test('checks supplied parameter names, descriptions and return descriptions', async () => {
+void test('checks supplied parameter names, descriptions and return descriptions', async () => {
   assert.ok(
     (
       await errors(
@@ -142,7 +153,28 @@ test('checks supplied parameter names, descriptions and return descriptions', as
   assert.ok(missing.includes('jsdoc/require-returns-description'));
 });
 
-test('rejects malformed TSDoc and duplicated TypeScript types', async () => {
+void test('requires parameter and result tags on callable contracts', async () => {
+  for (const signature of [
+    'read(value: string): string;',
+    'read: (value: string) => string;',
+  ]) {
+    const failures = await errors(
+      header +
+        `/** Fixture contract. */ interface Fixture { /** Read identity. */ ${signature} }`,
+    );
+    assert.ok(failures.includes('jsdoc/require-param'));
+    assert.ok(failures.includes('jsdoc/require-returns'));
+  }
+  assert.deepEqual(
+    await errors(
+      header +
+        '/** Fixture contract. */ interface Fixture { /** Clear fixture state. */ clear(): void; }',
+    ),
+    [],
+  );
+});
+
+void test('rejects malformed TSDoc and duplicated TypeScript types', async () => {
   assert.ok(
     (
       await errors(
@@ -161,11 +193,11 @@ test('rejects malformed TSDoc and duplicated TypeScript types', async () => {
   );
 });
 
-test('parses typed TSX before applying documentation rules', async () => {
+void test('parses typed TSX before applying documentation rules', async () => {
   const filePath = 'src/documentation-fixture.tsx';
   const [result] = await eslint.lintText(
     header +
-      '/** Render fixture. */ export const Component = (props: { label: string; timer?: NodeJS.Timeout }) => <div>{props.label}</div>;',
+      '/** Heading properties. */ interface Props { label: string; timer?: NodeJS.Timeout }\n/** Render fixture.\n * @param props - Heading properties.\n * @returns The fixture heading. */ export const Component = (props: Props) => <div>{props.label}</div>;',
     { filePath },
   );
   assert.equal(result.fatalErrorCount, 0);
@@ -181,7 +213,7 @@ test('parses typed TSX before applying documentation rules', async () => {
   );
 });
 
-test('requires JavaScript module and named-helper documentation', async () => {
+void test('requires JavaScript module and named-helper documentation', async () => {
   const missing = await errors(
     'const read = () => "id";',
     'scripts/documentation-fixture.mjs',
@@ -190,14 +222,14 @@ test('requires JavaScript module and named-helper documentation', async () => {
   assert.ok(missing.includes('jsdoc/require-jsdoc'));
   assert.deepEqual(
     await errors(
-      '/** Fixture tooling.\n * @file\n */\nimport "fixture";\n/** Read fixture identity. */ const read = () => "id";',
+      '/** Fixture tooling.\n * @file\n */\nimport "fixture";\n/** Read fixture identity.\n * @returns The fixture identity. */ const read = () => "id";',
       'scripts/documentation-fixture.mjs',
     ),
     [],
   );
 });
 
-test('excludes generated Worker output without excluding handwritten tests', async () => {
+void test('excludes generated Worker output without excluding handwritten tests', async () => {
   assert.equal(
     await eslint.isPathIgnored('.wrangler/documentation-fixture.ts'),
     true,

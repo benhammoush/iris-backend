@@ -15,7 +15,10 @@ const configuration = readFileSync(
 );
 const dashboardOrigin = 'https://iris-frontend-production.vercel.app';
 
-/** Build isolated environment bindings for the exercised request. */
+/** Build isolated environment bindings for the exercised request.
+ * @param environment - Checked-in configuration section to inspect.
+ * @returns Isolated bindings retaining exactly that section's CORS allowlist.
+ */
 function env(environment: string) {
   const section = configuration
     .split(`[env.${environment}.vars]`)[1]
@@ -25,11 +28,11 @@ function env(environment: string) {
   return testEnv({ CORS_ORIGINS: origins });
 }
 
-test('production configuration allows only the production dashboard origin', () => {
+void test('production configuration allows only the production dashboard origin', () => {
   assert.equal(env('production').CORS_ORIGINS, dashboardOrigin);
 });
 
-test('production permits dashboard GET requests and preflight', async () => {
+void test('production permits dashboard GET requests and preflight', async () => {
   for (const method of ['GET', 'OPTIONS']) {
     const response = await worker.fetch(
       new Request('https://api.example/v3/assets', {
@@ -47,7 +50,7 @@ test('production permits dashboard GET requests and preflight', async () => {
   }
 });
 
-test('production denies local and other environment origins for GET and preflight', async () => {
+void test('production denies local and other environment origins for GET and preflight', async () => {
   for (const origin of [
     'http://localhost:3000',
     'http://localhost:5173',
@@ -69,12 +72,13 @@ test('production denies local and other environment origins for GET and prefligh
       );
       assert.equal(response.status, 403, `${method} ${origin}`);
       assert.equal(response.headers.get('access-control-allow-origin'), null);
-      assert.equal((await response.json()).error.code, 'CORS_ORIGIN_DENIED');
+      const body = (await response.json()) as { error: { code: string } };
+      assert.equal(body.error.code, 'CORS_ORIGIN_DENIED');
     }
   }
 });
 
-test('dev localhost and originless production health checks remain permitted', async () => {
+void test('dev localhost and originless production health checks remain permitted', async () => {
   const dev = await worker.fetch(
     new Request('https://api.example/health', {
       headers: { origin: 'http://localhost:5173' },

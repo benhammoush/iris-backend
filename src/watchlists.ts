@@ -18,7 +18,13 @@ interface PrivateRequest {
   body?: ReadableStream<Uint8Array> | null;
 }
 
-/** Handle authenticated watchlist operations without exposing private account data to public routes. */
+/** Handle authenticated watchlist operations without exposing private account data to public routes.
+ * @param request - Private-route request with no supported body or query parameters.
+ * @param env - Selected account database, limiter and Firebase configuration.
+ * @param id - Request correlation identifier.
+ * @param origin - Validated allowed browser origin, or null.
+ * @returns An account-isolated watchlist response or a controlled private error.
+ */
 export async function watchlistRoute(
   request: PrivateRequest,
   env: Env,
@@ -84,14 +90,18 @@ export async function watchlistRoute(
       )
       .bind(uid)
       .run();
-    /** Prepare the active-account lookup used in the same batch as private data access. */
+    /** Prepare the active-account lookup used in the same batch as private data access.
+     * @returns The lookup statement bound to the verified account identity.
+     */
     const active = () =>
       db
         .prepare(
           "SELECT state FROM watchlist_accounts WHERE uid = ? AND state = 'active'",
         )
         .bind(uid);
-    /** Validate that the account remains active before accepting stored watchlist results. */
+    /** Validate that the account remains active before accepting stored watchlist results.
+     * @param rows - Active-account evidence returned in the same batch as private data access.
+     */
     const checkActive = (rows: unknown[]) => {
       if (!rows.length) throw new PrivateError('ACCOUNT_DELETING', 403);
     };
@@ -106,7 +116,10 @@ export async function watchlistRoute(
       ]);
       checkActive(result[0].results);
       const items = result[1].results;
-      /** Project saved rows of the requested kind into the private response collection. */
+      /** Project saved rows of the requested kind into the private response collection.
+       * @param kind - Asset or wallet collection to project.
+       * @returns Only saved addresses and timestamps belonging to that collection.
+       */
       const section = (kind: string) =>
         items
           .filter((item) => item.kind === kind)

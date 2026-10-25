@@ -22,7 +22,10 @@ export type ProviderConfig = Partial<
   >
 >;
 
-/** Resolve the Worker configuration from the current environment bindings. */
+/** Resolve the Worker configuration from the current environment bindings.
+ * @param env - Current public settings and server-only provider credentials.
+ * @returns Trimmed allowed origins, selected credentials and explicit provider mode.
+ */
 export function getConfig(env: WorkerVariables): WorkerConfig {
   return {
     corsOrigins: (env.CORS_ORIGINS || '')

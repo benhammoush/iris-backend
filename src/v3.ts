@@ -20,23 +20,33 @@ import { refreshMarket } from './market.ts';
 import { providerJson } from './providerRequest.ts';
 import { singleFlight, providerKey } from './singleFlight.ts';
 import { decimalValue, formatAtomicAmount } from './transforms.ts';
-import { array, record, isRecord } from './record.ts';
+import { array, record, isRecord, scalarText } from './record.ts';
 import type { Env } from './env.ts';
 import type { ProviderConfig as WorkerConfig } from './config.ts';
 
-/** Accept only timestamps that can be represented by the response contract. */
+/** Accept only timestamps that can be represented by the response contract.
+ * @param value - Unknown timestamp field.
+ * @returns Whether the field is parseable timestamp text.
+ */
 function validDate(value: unknown): boolean {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 
 const HELIUS_RPC = 'https://mainnet.helius-rpc.com/';
 
-/** Normalize finite numeric provider values and preserve unavailable data as null. */
+/** Normalize finite numeric provider values and preserve unavailable data as null.
+ * @param value - Unknown numeric provider field.
+ * @returns Its finite numeric primitive, or null without coercion.
+ */
 function finiteOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-/** Build asset identity with unavailable metrics represented as null, not fabricated zero values. */
+/** Build asset identity with unavailable metrics represented as null, not fabricated zero values.
+ * @param mint - Exact mint identity.
+ * @param decimals - Unknown decimal context from a token account.
+ * @returns Identity-only metadata with validated decimals and unavailable market fields.
+ */
 function fallbackAsset(mint: string, decimals: unknown) {
   return {
     mint,
@@ -53,7 +63,10 @@ function fallbackAsset(mint: string, decimals: unknown) {
   };
 }
 
-/** Normalize an asset into the v3 response contract, preserving unavailable fields. */
+/** Normalize an asset into the v3 response contract, preserving unavailable fields.
+ * @param value - Unknown stored or provider-derived asset value.
+ * @returns Existing v3 metadata or a projection with explicit unavailable metrics.
+ */
 export function v3Asset(value: unknown): Record<string, unknown> {
   const asset = record(value);
   if (isRecord(asset.v3)) return asset.v3;
@@ -86,7 +99,10 @@ export function v3Asset(value: unknown): Record<string, unknown> {
   };
 }
 
-/** Normalize usable history observations without inventing missing time or price values. */
+/** Normalize usable history observations without inventing missing time or price values.
+ * @param points - Unknown historical collection.
+ * @returns Valid timestamp/price points, or null when no collection was supplied.
+ */
 export function mapV3HistoryPoints(points: unknown) {
   if (!Array.isArray(points)) return null;
   return array(points)
@@ -104,7 +120,13 @@ export function mapV3HistoryPoints(points: unknown) {
     });
 }
 
-/** Call the configured Solana RPC provider with a bounded request deadline. */
+/** Call the configured Solana RPC provider with a bounded request deadline.
+ * @param method - Read-only RPC method selected by trusted code.
+ * @param params - Method-specific positional or named parameters.
+ * @param apiKey - Server-only operator credential.
+ * @param timeoutMs - Maximum total request duration in milliseconds.
+ * @returns Unknown RPC result for resource-specific validation.
+ */
 export async function heliusRpc(
   method: string,
   params: unknown[] | Record<string, unknown>,
@@ -124,17 +146,23 @@ export async function heliusRpc(
   );
   if (payload.error)
     throw new Error(
-      `Helius RPC error: ${record(payload.error).message || 'unknown'}`,
+      `Helius RPC error: ${scalarText(record(payload.error).message, 'unknown') || 'unknown'}`,
     );
   return payload.result;
 }
 
-/** Preserve unavailable text as null rather than inventing a value. */
+/** Preserve unavailable text as null rather than inventing a value.
+ * @param value - Unknown response text field.
+ * @returns Nonempty string text, or null without object coercion.
+ */
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null;
 }
 
-/** Validate the string representation of an exact atomic quantity. */
+/** Validate the string representation of an exact atomic quantity.
+ * @param value - Unknown integer text or numeric quantity.
+ * @returns Unsigned integer text, accepting numbers only within safe-integer bounds.
+ */
 function atomicString(value: unknown): string | null {
   return typeof value === 'string' && /^\d+$/.test(value)
     ? value
@@ -143,7 +171,12 @@ function atomicString(value: unknown): string | null {
       : null;
 }
 
-/** Read a cached value only when its resource-specific validator accepts it. */
+/** Read a cached value only when its resource-specific validator accepts it.
+ * @param env - Selected snapshot-store binding.
+ * @param key - Complete resource and pagination cache key.
+ * @param validate - Resource-specific validator for object-shaped stored data.
+ * @returns Validated stored data or null, never an unchecked typed payload.
+ */
 async function cachedValue(
   env: Env,
   key: string,
@@ -155,17 +188,29 @@ async function cachedValue(
   return isRecord(cached) && validate(cached) ? cached : null;
 }
 
-/** Label this response fresh and forward its observation time unchanged; this helper does not check age. */
+/** Label this response fresh and forward its observation time unchanged; this helper does not check age.
+ * @param asOf - Observation timestamp already checked by the resource validator.
+ * @returns The fresh-cache label and unchanged timestamp.
+ */
 function cachedFreshness(asOf: unknown) {
   return { cacheState: 'fresh', asOf };
 }
 
-/** Determine whether this configuration forbids live provider refreshes. */
+/** Determine whether this configuration forbids live provider refreshes.
+ * @param config - Effective selected provider settings.
+ * @returns Whether only seeded/cached data is permitted.
+ */
 function cacheOnly(config: WorkerConfig) {
   return config.providerMode === 'cache-only';
 }
 
-/** Combine independent supply and account evidence into the on-chain asset profile. */
+/** Combine independent supply and account evidence into the on-chain asset profile.
+ * @param mint - Exact requested mint identity.
+ * @param assetValue - Unknown asset-provider metadata.
+ * @param supplyValue - Unknown RPC token-supply evidence.
+ * @param account - Unknown parsed mint-account evidence.
+ * @returns The supported profile with exact supply text and nullable unavailable fields.
+ */
 function assetOnchainProfile(
   mint: string,
   assetValue: unknown,
@@ -234,7 +279,10 @@ function assetOnchainProfile(
   };
 }
 
-/** Normalize an asset-provider holder record into the public holder contract. */
+/** Normalize an asset-provider holder record into the public holder contract.
+ * @param value - Unknown provider holder record.
+ * @returns A holder retaining exact quantity/decimal context, or null for invalid amounts.
+ */
 function holderFromDas(value: unknown) {
   const item = record(value);
   const tokenInfo = record(item.token_info);
@@ -260,7 +308,11 @@ function holderFromDas(value: unknown) {
   };
 }
 
-/** Normalize a token-account holder using the asset decimal precision. */
+/** Normalize a token-account holder using the asset decimal precision.
+ * @param value - Unknown provider token-account record.
+ * @param decimals - Asset decimal context to validate before formatting.
+ * @returns A normalized holder or null when quantity/decimal context is invalid.
+ */
 function holderFromTokenAccount(value: unknown, decimals: unknown) {
   const item = record(value);
   const atomicAmount = atomicString(item?.amount);
@@ -282,7 +334,11 @@ function holderFromTokenAccount(value: unknown, decimals: unknown) {
   };
 }
 
-/** Compute a display percentage from exact atomic amounts without changing the stored quantities. */
+/** Compute a display percentage from exact atomic amounts without changing the stored quantities.
+ * @param amount - Exact unsigned atomic quantity text, or null.
+ * @param supply - Exact unsigned total-supply text, or null.
+ * @returns A percentage rounded half up to two decimal places, or null for invalid/zero supply.
+ */
 function percentageOfSupply(amount: string | null, supply: string | null) {
   if (
     !amount ||
@@ -298,7 +354,12 @@ function percentageOfSupply(amount: string | null, supply: string | null) {
   return `${hundredths / 100n}.${String(hundredths % 100n).padStart(2, '0')}`;
 }
 
-/** Combine RPC account evidence with supply data for a distribution row. */
+/** Combine RPC account evidence with supply data for a distribution row.
+ * @param value - Unknown largest-account record.
+ * @param account - Unknown parsed token-account details.
+ * @param supplyAtomic - Exact supply text used only for display percentage calculation.
+ * @returns A distribution record, or null for invalid quantity/decimal context.
+ */
 function largestAccountFromRpc(
   value: unknown,
   account: unknown,
@@ -326,7 +387,12 @@ function largestAccountFromRpc(
   };
 }
 
-/** Resolve on-chain asset details with explicit cache and provider-failure semantics. */
+/** Resolve on-chain asset details with explicit cache and provider-failure semantics.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective provider settings and cache-only policy.
+ * @param mint - Exact requested mint identity.
+ * @returns Cached or live on-chain profile with explicit freshness metadata.
+ */
 async function assetOnchainWork(env: Env, config: WorkerConfig, mint: string) {
   const key = `asset:v3:onchain:${mint}`;
   const cached = await cachedValue(
@@ -364,7 +430,13 @@ async function assetOnchainWork(env: Env, config: WorkerConfig, mint: string) {
   return { profile, freshness: { cacheState: 'miss', asOf } };
 }
 
-/** Resolve one bounded page of asset holders. */
+/** Resolve one bounded page of asset holders.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective provider settings and cache-only policy.
+ * @param mint - Exact requested mint identity.
+ * @param page - One-based bounded holder page.
+ * @returns Holder records, page identity and supported continuation information.
+ */
 async function assetHoldersWork(
   env: Env,
   config: WorkerConfig,
@@ -447,7 +519,12 @@ async function assetHoldersWork(
   };
 }
 
-/** Resolve the supported largest-account distribution for one mint. */
+/** Resolve the supported largest-account distribution for one mint.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective provider settings and cache-only policy.
+ * @param mint - Exact requested mint identity.
+ * @returns Bounded largest-account evidence and exact supply context.
+ */
 async function assetDistributionWork(
   env: Env,
   config: WorkerConfig,
@@ -527,7 +604,13 @@ async function assetDistributionWork(
   };
 }
 
-/** Fetch bounded parsed transaction events from the configured provider. */
+/** Fetch bounded parsed transaction events from the configured provider.
+ * @param address - Exact account or mint identity.
+ * @param apiKey - Server-only operator provider credential.
+ * @param limit - Validated bounded number of events to request.
+ * @param cursor - Opaque continuation token, or null for the initial page.
+ * @returns Unknown event records and supported continuation text.
+ */
 async function parsedEvents(
   address: string,
   apiKey: string,
@@ -559,7 +642,11 @@ async function parsedEvents(
   };
 }
 
-/** Extract a transfer for the requested mint from a parsed transaction. */
+/** Extract a transfer for the requested mint from a parsed transaction.
+ * @param value - Unknown parsed transfer evidence.
+ * @param mint - Exact requested mint identity.
+ * @returns Matching transfer identities and exact quantities, or null when unsupported.
+ */
 function transferFromParsed(value: unknown, mint: string) {
   const transfer = record(value);
   const atomicAmount = atomicString(
@@ -584,7 +671,11 @@ function transferFromParsed(value: unknown, mint: string) {
   };
 }
 
-/** Normalize a parsed transaction into the asset transaction contract. */
+/** Normalize a parsed transaction into the asset transaction contract.
+ * @param value - Unknown parsed transaction event.
+ * @param mint - Exact requested mint whose transfers are selected.
+ * @returns Supported transaction fields and matching transfers without inventing missing evidence.
+ */
 function assetTransactionFrom(value: unknown, mint: string) {
   const event = record(value);
   const parsed = record(event.parsed);
@@ -612,7 +703,14 @@ function assetTransactionFrom(value: unknown, mint: string) {
   };
 }
 
-/** Resolve a bounded cursor page of asset transaction history. */
+/** Resolve a bounded cursor page of asset transaction history.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective provider settings and cache-only policy.
+ * @param mint - Exact requested mint identity.
+ * @param limit - Validated bounded transaction count.
+ * @param cursor - Opaque continuation token, or null for the initial page.
+ * @returns Supported asset transactions and the next cursor.
+ */
 async function assetTransactionsWork(
   env: Env,
   config: WorkerConfig,
@@ -654,26 +752,34 @@ async function assetTransactionsWork(
   };
 }
 
-/** Normalize an asset-provider wallet holding while preserving exact quantity fields. */
+/** Normalize an asset-provider wallet holding while preserving exact quantity fields.
+ * @param value - Unknown asset-provider holding.
+ * @returns Its mint, scalar integer quantity text and decimal context, or null when invalid.
+ */
 function dasHolding(value: unknown) {
   const item = record(value);
   const mint = item?.id;
-  const rawAmount = record(item.token_info).balance;
+  const rawAmount = scalarText(record(item.token_info).balance, 'invalid');
   const decimals =
     record(item.token_info).decimals ??
     record(record(item.content).metadata).decimals;
   if (
     typeof mint !== 'string' ||
-    !/^\d+$/.test(String(rawAmount)) ||
+    !/^\d+$/.test(rawAmount) ||
     typeof decimals !== 'number' ||
     !Number.isInteger(decimals) ||
     decimals < 0
   )
     return null;
-  return { mint, rawAmount: String(rawAmount), decimals };
+  return { mint, rawAmount, decimals };
 }
 
-/** Combine wallet holdings and market metadata without treating missing prices as zero. */
+/** Combine wallet holdings and market metadata without treating missing prices as zero.
+ * @param address - Exact requested wallet identity.
+ * @param value - Unknown provider holdings and native-balance response.
+ * @param marketAssets - Normalized market metadata keyed by mint.
+ * @returns Bounded balances with exact quantities and explicit partial-valuation/truncation state.
+ */
 export function mapDasWallet(
   address: string,
   value: unknown,
@@ -681,10 +787,13 @@ export function mapDasWallet(
 ) {
   const result = record(value);
   const items = array(result.items);
-  const nativeRawAmount = record(result.nativeBalance).lamports;
+  const nativeRawAmount = scalarText(
+    record(result.nativeBalance).lamports,
+    'invalid',
+  );
   const native =
-    /^\d+$/.test(String(nativeRawAmount)) && String(nativeRawAmount) !== '0'
-      ? [{ mint: SOL_MINT, rawAmount: String(nativeRawAmount), decimals: 9 }]
+    /^\d+$/.test(nativeRawAmount) && nativeRawAmount !== '0'
+      ? [{ mint: SOL_MINT, rawAmount: nativeRawAmount, decimals: 9 }]
       : [];
   const holdings = [
     ...native,
@@ -747,7 +856,13 @@ export function mapDasWallet(
   };
 }
 
-/** Resolve wallet data and optionally refresh the market metadata used for valuation. */
+/** Resolve wallet data and optionally refresh the market metadata used for valuation.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective provider settings and cache-only policy.
+ * @param address - Exact requested wallet identity.
+ * @param marketRefresh - Market enrichment operation; failures retain unpriced holdings.
+ * @returns A bounded wallet projection with explicit cache freshness and partial valuation.
+ */
 async function walletWork(
   env: Env,
   config: WorkerConfig,
@@ -818,7 +933,10 @@ async function walletWork(
   return { wallet, freshness: { cacheState: 'miss', asOf } };
 }
 
-/** Normalize an exact atomic quantity without a lossy floating-point conversion. */
+/** Normalize an exact atomic quantity without a lossy floating-point conversion.
+ * @param value - Unknown raw quantity or supported quantity envelope.
+ * @returns Exact integer text, or null for unsupported/unsafe numeric values.
+ */
 function atomicAmount(value: unknown): string | null {
   const raw = record(value).tokenAmount ?? record(value).amount ?? value;
   if (typeof raw === 'string' && /^\d+$/.test(raw)) return raw;
@@ -829,7 +947,10 @@ function atomicAmount(value: unknown): string | null {
     : null;
 }
 
-/** Extract supported transfer details from parsed transaction evidence. */
+/** Extract supported transfer details from parsed transaction evidence.
+ * @param parsed - Object-shaped parsed transaction with unknown transfer fields.
+ * @returns Native and token transfer projections preserving exact atomic quantities.
+ */
 function transferDetails(parsed: Record<string, unknown>) {
   return {
     native: array(parsed.nativeTransfers)
@@ -870,7 +991,10 @@ function transferDetails(parsed: Record<string, unknown>) {
   };
 }
 
-/** Normalize provider transaction evidence into the v3 event contract. */
+/** Normalize provider transaction evidence into the v3 event contract.
+ * @param value - Unknown parsed-event provider record.
+ * @returns Supported event identity, status, summary and exact transfer projections.
+ */
 export function mapV3Event(value: unknown) {
   const event = record(value);
   const parsed = record(event.parsed);
@@ -897,7 +1021,14 @@ export function mapV3Event(value: unknown) {
   };
 }
 
-/** Resolve a bounded cursor page of address events. */
+/** Resolve a bounded cursor page of address events.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective provider settings and cache-only policy.
+ * @param address - Exact requested account identity.
+ * @param limit - Validated bounded event count.
+ * @param cursor - Opaque continuation token, or null for the initial page.
+ * @returns Normalized events and supported continuation text.
+ */
 async function eventsWork(
   env: Env,
   config: WorkerConfig,
@@ -932,7 +1063,12 @@ async function eventsWork(
   return { events: data, nextCursor: page.paginationToken };
 }
 
-/** Coalesce equivalent on-chain asset reads under the complete resource and provider identity. */
+/** Coalesce equivalent on-chain asset reads under the complete resource and provider identity.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective provider settings and read policy.
+ * @param mint - Exact requested mint identity.
+ * @returns The coalesced on-chain profile and freshness result.
+ */
 export function loadV3AssetOnchain(
   env: Env,
   config: WorkerConfig,
@@ -945,7 +1081,13 @@ export function loadV3AssetOnchain(
   );
 }
 
-/** Coalesce equivalent holder-page reads under the complete resource and provider identity. */
+/** Coalesce equivalent holder-page reads under the complete resource and provider identity.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective provider settings and read policy.
+ * @param mint - Exact requested mint identity.
+ * @param page - One-based holder page.
+ * @returns The coalesced holder-page result without mixing pages or configurations.
+ */
 export function loadV3AssetHolders(
   env: Env,
   config: WorkerConfig,
@@ -959,7 +1101,12 @@ export function loadV3AssetHolders(
   );
 }
 
-/** Coalesce equivalent distribution reads under the complete resource and provider identity. */
+/** Coalesce equivalent distribution reads under the complete resource and provider identity.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective provider settings and read policy.
+ * @param mint - Exact requested mint identity.
+ * @returns The coalesced largest-account distribution result.
+ */
 export function loadV3AssetDistribution(
   env: Env,
   config: WorkerConfig,
@@ -972,7 +1119,14 @@ export function loadV3AssetDistribution(
   );
 }
 
-/** Coalesce equivalent asset transaction pages without mixing cursors or limits. */
+/** Coalesce equivalent asset transaction pages without mixing cursors or limits.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective provider settings and read policy.
+ * @param mint - Exact requested mint identity.
+ * @param limit - Validated bounded transaction count.
+ * @param cursor - Opaque continuation token, or null for the initial page.
+ * @returns The coalesced transaction-page result.
+ */
 export function loadV3AssetTransactions(
   env: Env,
   config: WorkerConfig,
@@ -987,7 +1141,13 @@ export function loadV3AssetTransactions(
   );
 }
 
-/** Coalesce equivalent wallet reads without mixing market-refresh policies. */
+/** Coalesce equivalent wallet reads without mixing market-refresh policies.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective provider settings and read policy.
+ * @param address - Exact requested wallet identity.
+ * @param marketRefresh - Enrichment operation whose identity participates in the sharing key.
+ * @returns The coalesced bounded wallet and freshness result.
+ */
 export function loadV3Wallet(
   env: Env,
   config: WorkerConfig,
@@ -1001,7 +1161,14 @@ export function loadV3Wallet(
   );
 }
 
-/** Coalesce equivalent event pages without mixing address, cursor or limit. */
+/** Coalesce equivalent event pages without mixing address, cursor or limit.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective provider settings and read policy.
+ * @param address - Exact requested account identity.
+ * @param limit - Validated bounded event count.
+ * @param cursor - Opaque continuation token, or null for the initial page.
+ * @returns The coalesced normalized event page.
+ */
 export function loadV3Events(
   env: Env,
   config: WorkerConfig,

@@ -36,12 +36,18 @@ type NetworkResults = Record<
 >;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
-/** Accept only finite numeric values from the provider boundary. */
+/** Accept only finite numeric values from the provider boundary.
+ * @param value - Unknown numeric provider field.
+ * @returns Its finite numeric primitive, or null without coercion.
+ */
 function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-/** Compute the median of the available numeric samples. */
+/** Compute the median of the available numeric samples.
+ * @param values - Numeric samples; non-finite entries are discarded.
+ * @returns The middle value or mean of the middle pair, or null for no usable samples.
+ */
 function median(values: number[]) {
   const sorted = values
     .filter((value) => finite(value) !== null)
@@ -53,7 +59,11 @@ function median(values: number[]) {
     : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-/** Retain a previous usable metric as stale or mark it unavailable. */
+/** Retain a previous usable metric as stale or mark it unavailable.
+ * @param previous - Unknown prior network snapshot.
+ * @param key - Independent metric section to carry forward.
+ * @returns The retained section labeled stale, or explicit unavailable state.
+ */
 function staleOrUnavailable(previous: unknown, key: string) {
   const prior = record(previous)[key];
   return prior && record(prior).state !== 'unavailable'
@@ -61,7 +71,10 @@ function staleOrUnavailable(previous: unknown, key: string) {
     : { state: 'unavailable', asOf: null };
 }
 
-/** Carry forward dashboard network data with stale status rather than presenting it as fresh. */
+/** Carry forward dashboard network data with stale status rather than presenting it as fresh.
+ * @param previous - Unknown prior dashboard network snapshot.
+ * @returns Chain, performance and fee sections independently labeled stale or unavailable.
+ */
 export function staleDashboardNetwork(previous: unknown = null) {
   return {
     source: 'helius-rpc',
@@ -72,12 +85,18 @@ export function staleDashboardNetwork(previous: unknown = null) {
   };
 }
 
-/** Extract a fulfilled provider result without throwing for an independently failed sibling request. */
+/** Extract a fulfilled provider result without throwing for an independently failed sibling request.
+ * @param result - Fulfilled or rejected RPC outcome.
+ * @returns Unknown successful provider data, or null after rejection.
+ */
 function fulfilled(result: Outcome): unknown {
   return result.status === 'fulfilled' ? result.value : null;
 }
 
-/** Record failed RPC method identities without logging credential-bearing requests. */
+/** Record failed RPC method identities without logging credential-bearing requests.
+ * @param methods - Trusted method labels matching the request order.
+ * @param results - Independent outcomes in the same order.
+ */
 function logRejectedRpcCalls(methods: string[], results: Outcome[]) {
   results.forEach((result, index) => {
     if (result.status === 'rejected')
@@ -91,7 +110,10 @@ function logRejectedRpcCalls(methods: string[], results: Outcome[]) {
   });
 }
 
-/** Summarize supported performance samples without inventing missing provider measurements. */
+/** Summarize supported performance samples without inventing missing provider measurements.
+ * @param samples - Unknown provider performance-sample collection.
+ * @returns Observed transaction totals, durations and TPS with unavailable rates left null.
+ */
 export function summarizePerformance(samples: unknown) {
   const usable = array(samples)
     .map((sample) => ({
@@ -135,7 +157,10 @@ export function summarizePerformance(samples: unknown) {
   };
 }
 
-/** Normalize validator production counters into the network summary. */
+/** Normalize validator production counters into the network summary.
+ * @param production - Unknown provider production-counter response.
+ * @returns Assigned, produced and missed slots plus available production percentage/range.
+ */
 export function summarizeProduction(production: unknown) {
   const value = record(record(production).value);
   const entries = Object.values(record(value.byIdentity));
@@ -157,7 +182,10 @@ export function summarizeProduction(production: unknown) {
   };
 }
 
-/** Extract supported block metrics for the latest-block summary. */
+/** Extract supported block metrics for the latest-block summary.
+ * @param block - Unknown block evidence, absent when the provider read failed.
+ * @returns Available timing, transaction/failure counts and observed fee statistics.
+ */
 export function summarizeLatestBlock(block: unknown) {
   const data = record(block);
   const transactions = array(data.transactions);
@@ -188,7 +216,12 @@ export function summarizeLatestBlock(block: unknown) {
   };
 }
 
-/** Combine independently available RPC results and retain explicit stale or unavailable fields. */
+/** Combine independently available RPC results and retain explicit stale or unavailable fields.
+ * @param results - Independent outcomes keyed by supported network read.
+ * @param previous - Unknown prior snapshot used only for explicit stale fallback.
+ * @param now - Observation timestamp for newly available measurements.
+ * @returns Independent fresh, stale or unavailable metric sections without changing formulas.
+ */
 export function normalizeNetworkSnapshot(
   results: NetworkResults,
   previous: unknown = null,
@@ -329,7 +362,12 @@ export function normalizeNetworkSnapshot(
   };
 }
 
-/** Refresh network metrics while preserving partial-failure and freshness semantics. */
+/** Refresh network metrics while preserving partial-failure and freshness semantics.
+ * @param rpc - Bounded read-only RPC operation returning unknown provider values.
+ * @param previous - Unknown prior snapshot used for independent stale fallback.
+ * @param now - Observation timestamp for successful metric reads.
+ * @returns The normalized network snapshot despite independently failed sibling requests.
+ */
 export async function refreshNetworkMetrics(
   rpc: Rpc,
   previous: unknown = null,
@@ -478,7 +516,13 @@ export async function refreshNetworkMetrics(
   );
 }
 
-/** Refresh dashboard-specific metrics using the supplied confirmed slot and prior state. */
+/** Refresh dashboard-specific metrics using the supplied confirmed slot and prior state.
+ * @param rpc - Bounded read-only RPC operation returning unknown provider values.
+ * @param confirmedSlot - Caller-observed confirmed slot, validated before fresh chain publication.
+ * @param previous - Unknown prior dashboard snapshot used for independent stale fallback.
+ * @param now - Observation timestamp for successful metric reads.
+ * @returns Dashboard chain, performance and fee sections with explicit fallback state.
+ */
 export async function refreshDashboardNetworkMetrics(
   rpc: Rpc,
   confirmedSlot: unknown,
@@ -519,7 +563,7 @@ export async function refreshDashboardNetworkMetrics(
   const blockSlots = fulfilled(blockSlotsResult);
   const latestBlockSlot =
     Array.isArray(blockSlots) && blockSlots.length
-      ? blockSlots[blockSlots.length - 1]
+      ? array(blockSlots)[blockSlots.length - 1]
       : null;
   if (blockSlotsResult.status === 'rejected')
     unavailable(

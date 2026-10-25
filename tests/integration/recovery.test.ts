@@ -42,80 +42,78 @@ import worker from '../../src/index.ts';
 
 const now = new Date('2026-10-14T12:00:00.000Z');
 
-/** Models committed writes only; a rejected put leaves the preceding value intact. */
+/** Models committed writes only; a rejected put leaves the preceding value intact.
+ * @param entries - Initial committed JSON entries.
+ * @returns Cache operations, retained records, attempted writes and a controlled failure selector.
+ */
 function retainedStore(entries: [string, unknown][] = []) {
   const records = new Map(entries);
   const writes: string[] = [];
   let failKey: string | null = null;
   const kv: SnapshotStore = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key) => records.get(key) ?? null,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async (key, value) => {
-      writes.push(key);
-      if (key === failKey) throw new Error('Injected KV write failure');
-      records.set(key, JSON.parse(value));
-    },
+    /** Read the last committed value.
+     * @param key - Requested cache identity.
+     * @returns Stored unknown JSON or null when absent.
+     */
+    get: (key) => Promise.resolve(records.get(key) ?? null),
+    /** Commit only successful fixture writes.
+     * @param key - Requested cache identity.
+     * @param value - Complete serialized payload.
+     * @returns Completion unless the selected identity is configured to fail.
+     */
+    put: (key, value) =>
+      Promise.resolve().then(() => {
+        writes.push(key);
+        if (key === failKey) throw new Error('Injected KV write failure');
+        records.set(key, JSON.parse(value));
+      }),
   };
   return {
     kv,
     records,
     writes,
-    /** Select the controlled failing cache operation for the recovery test. */
+    /** Select the controlled failing cache operation for the recovery test.
+     * @param key - Identity to fail, or null to restore successful writes.
+     */
     fail: (key: string | null) => {
       failKey = key;
     },
   };
 }
 
-/** Installs deterministic read-only providers, with independent failure switches. */
-function recoveryProvider(
-  failures: {
-    block?: boolean;
-    network?: boolean;
-    market?: boolean;
-    discovery?: boolean;
-  } = {},
-) {
-  fetchStub.fetch = async (url, options) => {
+/** Independent provider outages selected by recovery assertions. */
+interface RecoveryFailures {
+  block?: boolean;
+  network?: boolean;
+  market?: boolean;
+  discovery?: boolean;
+}
+
+/** Installs deterministic read-only providers, with independent failure switches.
+ * @param failures - Mutable outage switches for independent provider sections.
+ */
+function recoveryProvider(failures: RecoveryFailures = {}) {
+  fetchStub.fetch = (url, options) => {
     if (url.includes('api.llama.fi')) return { ok: false, status: 400 };
     if (url.includes('/toptraded/'))
       return failures.market
         ? { ok: false, status: 400 }
-        : {
-            ok: true,
-            /** Return the controlled JSON payload for this provider-response fixture. */
-            json: async () => [
-              {
-                id: SOL_MINT,
-                symbol: 'SOL',
-                name: 'Solana',
-                decimals: 9,
-                isVerified: true,
-                usdPrice: 150,
-              },
-            ],
-          };
+        : Response.json([
+            {
+              id: SOL_MINT,
+              symbol: 'SOL',
+              name: 'Solana',
+              decimals: 9,
+              isVerified: true,
+              usdPrice: 150,
+            },
+          ]);
     if (url.includes('/toptrending/') || url.includes('/tokens/v2/recent'))
       return failures.discovery
         ? { ok: false, status: 400 }
-        : {
-            ok: true,
-            /** Return the controlled JSON payload for this provider-response fixture. */
-            json: async () => [],
-          };
-    if (url.includes('/addresses/'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => [],
-      };
-    if (url.includes('/parsed-events/'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ data: [] }),
-      };
+        : Response.json([]);
+    if (url.includes('/addresses/')) return Response.json([]);
+    if (url.includes('/parsed-events/')) return Response.json({ data: [] });
     const request = record(JSON.parse(options.body));
     const params = array(request.params);
     const sampleBlock =
@@ -130,13 +128,9 @@ function recoveryProvider(
     )
       return { ok: false, status: 400 };
     if (sampleBlock)
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: { blockTime: 1_760_000_000, signatures: ['new-signature'] },
-        }),
-      };
+      return Response.json({
+        result: { blockTime: 1_760_000_000, signatures: ['new-signature'] },
+      });
     // Snapshot-only RPC groups may return unavailable metrics; this fixture proves
     // valid dashboard groups and core publication, not fabricated chain analytics.
     const known = [
@@ -147,18 +141,18 @@ function recoveryProvider(
       'getBlocksWithLimit',
       'getBlock',
     ];
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () =>
-        known.includes(String(request.method))
-          ? networkOnlyPayload(options)
-          : { result: null },
-    };
+    return Response.json(
+      typeof request.method === 'string' && known.includes(request.method)
+        ? networkOnlyPayload(options)
+        : { result: null },
+    );
   };
 }
 
-/** Returns valid network metrics while failing only the signatures-only block read. */
+/** Returns valid network metrics while failing only the signatures-only block read.
+ * @param options - Serialized RPC request selecting controlled network evidence.
+ * @returns Supported provider JSON without fabricating unsupported method results.
+ */
 function networkOnlyPayload(options: FetchStubOptions): unknown {
   const request = record(JSON.parse(options.body));
   if (request.method === 'getSlot') return { result: 123 };
@@ -177,10 +171,16 @@ function networkOnlyPayload(options: FetchStubOptions): unknown {
   if (request.method === 'getBlocksWithLimit') return { result: [123] };
   if (request.method === 'getBlock')
     return { result: { transactions: [{ meta: { fee: 100 } }] } };
-  throw new Error(`Unexpected test RPC: ${request.method}`);
+  throw new Error(
+    `Unexpected test RPC: ${typeof request.method === 'string' ? request.method : 'invalid'}`,
+  );
 }
 
-/** Builds a dashboard with an independently dated transaction sample. */
+/** Builds a dashboard with an independently dated transaction sample.
+ * @param asOf - Envelope and network observation timestamp.
+ * @param transactionAsOf - Independent original transaction observation timestamp.
+ * @returns A fixture whose independently dated sections permit retention-boundary assertions.
+ */
 function dashboard(asOf: string, transactionAsOf = asOf) {
   return {
     asOf,
@@ -204,7 +204,7 @@ function dashboard(asOf: string, transactionAsOf = asOf) {
   };
 }
 
-test('a fresh network refresh cannot revive a transaction sample older than 24 hours', async () => {
+void test('a fresh network refresh cannot revive a transaction sample older than 24 hours', async () => {
   const original = fetchStub.fetch;
   const oldTime = new Date(now.getTime() - STALE_AFTER_MS - 1).toISOString();
   // A previous partial refresh renewed the envelope, but not the transactions.
@@ -216,24 +216,27 @@ test('a fresh network refresh cannot revive a transaction sample older than 24 h
   const env = testEnv({
     HELIUS_API_KEY: 'test-helius',
     SNAPSHOTS: {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async () => cached,
-      /** Observe or simulate the cache write requested by this test. */
-      put: async (key, value) => writes.set(key, JSON.parse(value)),
+      /** Read the preceding independently dated dashboard.
+       * @returns Its unchanged original observation timestamps.
+       */
+      get: () => Promise.resolve(cached),
+      /** Capture replacement publication.
+       * @param key - Requested cache identity.
+       * @param value - Complete serialized dashboard.
+       * @returns Completion after recording the replacement.
+       */
+      put: (key, value) =>
+        Promise.resolve(writes.set(key, JSON.parse(value) as unknown)),
     },
   });
-  fetchStub.fetch = async (_url, options) => {
+  fetchStub.fetch = (_url, options) => {
     const request = record(JSON.parse(options.body));
     if (
       request.method === 'getBlock' &&
       record(array(request.params)[1]).transactionDetails === 'signatures'
     )
       return { ok: false, status: 400 };
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => networkOnlyPayload(options),
-    };
+    return Response.json(networkOnlyPayload(options));
   };
   try {
     const result = await loadHeliusDashboardSample(env, {}, now, true);
@@ -251,7 +254,7 @@ test('a fresh network refresh cannot revive a transaction sample older than 24 h
   }
 });
 
-test('transaction fallback expires at its own exact boundary, even in a renewed envelope', async (t) => {
+void test('transaction fallback expires at its own exact boundary, even in a renewed envelope', async (t) => {
   const original = fetchStub.fetch;
   recoveryProvider({ block: true });
   try {
@@ -264,8 +267,10 @@ test('transaction fallback expires at its own exact boundary, even in a renewed 
         const env = testEnv({
           HELIUS_API_KEY: 'test',
           SNAPSHOTS: {
-            /** Read the controlled cache or boundary value used by this assertion. */
-            get: async () => cached,
+            /** Read the original independently dated dashboard.
+             * @returns Fixture evidence without renewing either timestamp.
+             */
+            get: () => Promise.resolve(cached),
           },
         });
         const result = await loadHeliusDashboardSample(env, {}, now, true);
@@ -286,8 +291,10 @@ test('transaction fallback expires at its own exact boundary, even in a renewed 
     const result = await loadHeliusDashboardSample(
       testEnv({
         SNAPSHOTS: {
-          /** Read the controlled cache or boundary value used by this assertion. */
-          get: async () => cached,
+          /** Read the unchanged dashboard fixture.
+           * @returns The renewed envelope with its expired original transaction sample.
+           */
+          get: () => Promise.resolve(cached),
         },
       }),
       {},
@@ -302,7 +309,7 @@ test('transaction fallback expires at its own exact boundary, even in a renewed 
   }
 });
 
-test('legacy dashboard timestamps remain bounded without overriding explicit unavailable timestamps', async () => {
+void test('legacy dashboard timestamps remain bounded without overriding explicit unavailable timestamps', async () => {
   const original = fetchStub.fetch;
   recoveryProvider({ block: true });
   try {
@@ -338,9 +345,9 @@ test('legacy dashboard timestamps remain bounded without overriding explicit una
   }
 });
 
-test('recent and dashboard caches enforce exact fresh/stale expiry and reject malformed envelopes', async (t) => {
+void test('recent and dashboard caches enforce exact fresh/stale expiry and reject malformed envelopes', async (t) => {
   const original = fetchStub.fetch;
-  fetchStub.fetch = async () => {
+  fetchStub.fetch = () => {
     throw new Error('Cache-only reads must not call providers');
   };
   try {
@@ -355,8 +362,10 @@ test('recent and dashboard caches enforce exact fresh/stale expiry and reject ma
         const cached = dashboard(new Date(now.getTime() - age).toISOString());
         const env = testEnv({
           SNAPSHOTS: {
-            /** Read the controlled cache or boundary value used by this assertion. */
-            get: async () => cached,
+            /** Read the exact-boundary sample unchanged.
+             * @returns Fixture evidence used by both independent cache readers.
+             */
+            get: () => Promise.resolve(cached),
           },
         });
         for (const load of [
@@ -381,8 +390,10 @@ test('recent and dashboard caches enforce exact fresh/stale expiry and reject ma
     ]) {
       const env = testEnv({
         SNAPSHOTS: {
-          /** Read the controlled cache or boundary value used by this assertion. */
-          get: async () => cached,
+          /** Read one malformed fixture envelope.
+           * @returns The controlled invalid JSON payload.
+           */
+          get: () => Promise.resolve(cached),
         },
       });
       for (const load of [
@@ -399,7 +410,7 @@ test('recent and dashboard caches enforce exact fresh/stale expiry and reject ma
   }
 });
 
-test('partial dashboard recovery never republishes malformed, future or expired envelopes', async () => {
+void test('partial dashboard recovery never republishes malformed, future or expired envelopes', async () => {
   const original = fetchStub.fetch;
   recoveryProvider({ block: true, network: true });
   try {
@@ -433,7 +444,7 @@ test('partial dashboard recovery never republishes malformed, future or expired 
   }
 });
 
-test('dashboard component failures preserve independent stale groups and recover on the next read', async (t) => {
+void test('dashboard component failures preserve independent stale groups and recover on the next read', async (t) => {
   const original = fetchStub.fetch;
   try {
     for (const failures of [
@@ -495,7 +506,7 @@ test('dashboard component failures preserve independent stale groups and recover
   }
 });
 
-test('dashboard write failures retain preceding cache and do not poison a later refresh', async () => {
+void test('dashboard write failures retain preceding cache and do not poison a later refresh', async () => {
   const original = fetchStub.fetch;
   recoveryProvider();
   try {
@@ -527,7 +538,7 @@ test('dashboard write failures retain preceding cache and do not poison a later 
   }
 });
 
-test('public transaction metadata preserves explicit unavailable timestamps', async () => {
+void test('public transaction metadata preserves explicit unavailable timestamps', async () => {
   const original = fetchStub.fetch;
   recoveryProvider({ block: true });
   try {
@@ -559,7 +570,7 @@ test('public transaction metadata preserves explicit unavailable timestamps', as
   }
 });
 
-test('scheduled and authenticated refreshes retain bounded prior samples despite partial and optional outages', async (t) => {
+void test('scheduled and authenticated refreshes retain bounded prior samples despite partial and optional outages', async (t) => {
   const original = fetchStub.fetch;
   recoveryProvider({ block: true });
   try {
@@ -608,9 +619,9 @@ test('scheduled and authenticated refreshes retain bounded prior samples despite
   }
 });
 
-test('complete Helius outages keep usable dashboard data stale without renewing it', async () => {
+void test('complete Helius outages keep usable dashboard data stale without renewing it', async () => {
   const original = fetchStub.fetch;
-  fetchStub.fetch = async () => ({ ok: false, status: 400 });
+  fetchStub.fetch = () => ({ ok: false, status: 400 });
   try {
     for (const age of [60_001, STALE_AFTER_MS, STALE_AFTER_MS + 1]) {
       const cached = dashboard(new Date(now.getTime() - age).toISOString());
@@ -637,7 +648,7 @@ test('complete Helius outages keep usable dashboard data stale without renewing 
   }
 });
 
-test('snapshot publication failures keep readers on the preceding complete record, then recover', async (t) => {
+void test('snapshot publication failures keep readers on the preceding complete record, then recover', async (t) => {
   const original = fetchStub.fetch;
   recoveryProvider();
   try {
@@ -696,7 +707,7 @@ test('snapshot publication failures keep readers on the preceding complete recor
   }
 });
 
-test('readers remain on the old snapshot while its replacement data write is pending', async () => {
+void test('readers remain on the old snapshot while its replacement data write is pending', async () => {
   const original = fetchStub.fetch;
   recoveryProvider();
   const gate = deferred<void>();
@@ -707,7 +718,7 @@ test('readers remain on the old snapshot while its replacement data write is pen
     [SNAPSHOT_POINTER_KEY, { key: oldKey }],
     [oldKey, previous],
   ]);
-  const put = store.kv.put;
+  const put = store.kv.put.bind(store.kv);
   store.kv.put = async (key, value, options) => {
     if (key.startsWith(SNAPSHOT_KEY_PREFIX)) {
       started.resolve();
@@ -743,7 +754,7 @@ test('readers remain on the old snapshot while its replacement data write is pen
   }
 });
 
-test('market outages preserve usable snapshots without renewing their age or publishing fixtures', async () => {
+void test('market outages preserve usable snapshots without renewing their age or publishing fixtures', async () => {
   const original = fetchStub.fetch;
   recoveryProvider({ market: true });
   try {
@@ -780,7 +791,7 @@ test('market outages preserve usable snapshots without renewing their age or pub
   }
 });
 
-test('optional discovery failures publish an honest complete core snapshot with empty categories', async () => {
+void test('optional discovery failures publish an honest complete core snapshot with empty categories', async () => {
   const original = fetchStub.fetch;
   recoveryProvider({ discovery: true });
   try {
@@ -810,7 +821,7 @@ test('optional discovery failures publish an honest complete core snapshot with 
   }
 });
 
-test('DefiLlama provider and write failures leave preceding cache readable until expiry', async () => {
+void test('DefiLlama provider and write failures leave preceding cache readable until expiry', async () => {
   const original = fetchStub.fetch;
   const cached = {
     source: 'defillama',
@@ -820,17 +831,14 @@ test('DefiLlama provider and write failures leave preceding cache readable until
   };
   const store = retainedStore([['defillama:v3:dashboard', cached]]);
   try {
-    fetchStub.fetch = async () => ({ ok: false, status: 400 });
+    fetchStub.fetch = () => ({ ok: false, status: 400 });
     await assert.rejects(refreshDefiLlamaDashboard(store.kv, now));
     assert.deepEqual(
       (await loadDefiLlamaDashboard(store.kv, now.getTime())).dashboard,
       cached,
     );
-    fetchStub.fetch = async (url) => ({
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => (url.includes('/overview/') ? { protocols: [] } : []),
-    });
+    fetchStub.fetch = (url) =>
+      Response.json(url.includes('/overview/') ? { protocols: [] } : []);
     store.fail('defillama:v3:dashboard');
     await assert.rejects(
       refreshDefiLlamaDashboard(store.kv, now),
@@ -860,20 +868,17 @@ test('DefiLlama provider and write failures leave preceding cache readable until
   }
 });
 
-test('failed candle writes fall back to usable preceding candles, never expired or malformed records', async () => {
+void test('failed candle writes fall back to usable preceding candles, never expired or malformed records', async () => {
   const original = fetchStub.fetch;
-  fetchStub.fetch = async () => ({
-    ok: true,
-    /** Return the controlled JSON payload for this provider-response fixture. */
-    json: async () => ({
+  fetchStub.fetch = () =>
+    Response.json({
       success: true,
       data: {
         items: [
           { unix_time: 1_760_000_000, o: 1, h: 2, l: 1, c: 2, v: 1, v_usd: 2 },
         ],
       },
-    }),
-  });
+    });
   try {
     for (const cached of [
       {
@@ -887,12 +892,14 @@ test('failed candle writes fall back to usable preceding candles, never expired 
       { fetchedAt: 'invalid', candles: [] },
     ]) {
       const kv = {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async () => cached,
-        /** Observe or simulate the cache write requested by this test. */
-        put: async () => {
-          throw new Error('Injected KV write failure');
-        },
+        /** Read preceding candle evidence without renewing it.
+         * @returns The controlled stale, expired or malformed candle envelope.
+         */
+        get: () => Promise.resolve(cached),
+        /** Reject replacement publication before changing preceding candles.
+         * @returns The controlled cache-write rejection.
+         */
+        put: () => Promise.reject(new Error('Injected KV write failure')),
       };
       const result = await candlesForAsset(kv, SOL_MINT, 'test');
       const usable =

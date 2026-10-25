@@ -11,7 +11,17 @@ import { API_VERSION } from '../../src/constants.ts';
 
 const document = yaml.parse(
   await readFile(new URL('../../openapi.yaml', import.meta.url), 'utf8'),
-);
+) as {
+  openapi: string;
+  info: { version: string };
+  paths: Record<
+    string,
+    Record<
+      string,
+      { deprecated?: boolean; security?: Record<string, unknown>[] }
+    >
+  >;
+};
 const canonicalPaths = [
   '/v3/status',
   '/v3/network',
@@ -51,7 +61,7 @@ const legacyPaths = [
   '/v2/wallets/{address}',
 ];
 
-test('OpenAPI documents every canonical route and the current Worker version', () => {
+void test('OpenAPI documents every canonical route and the current Worker version', () => {
   assert.equal(document.openapi, '3.1.0');
   assert.equal(document.info.version, API_VERSION);
   for (const path of canonicalPaths) {
@@ -74,7 +84,7 @@ test('OpenAPI documents every canonical route and the current Worker version', (
   ]);
 });
 
-test('OpenAPI marks every v1 and v2 operation as deprecated', () => {
+void test('OpenAPI marks every v1 and v2 operation as deprecated', () => {
   for (const path of legacyPaths) {
     assert.equal(
       document.paths[path]?.get?.deprecated,

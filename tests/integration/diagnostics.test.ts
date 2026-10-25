@@ -24,17 +24,26 @@ import { SOL_MINT, SNAPSHOT_POINTER_KEY } from '../../src/constants.ts';
 const secret = 'SECRET_NEVER_LOG';
 const privateUrl = `https://provider.test/${secret}?api-key=${secret}`;
 const id = '12345678-1234-1234-1234-123456789abc';
-/** Build isolated environment bindings for the exercised request. */
+/** Build isolated environment bindings for the exercised request.
+ * @returns Cache-only bindings without external persistence.
+ */
 const env = () => ({
   SNAPSHOTS: {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async () => null,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async () => {},
+    /** Read an absent cache entry.
+     * @returns Null for every lookup.
+     */
+    get: () => Promise.resolve(null),
+    /** Accept fixture writes without persistence.
+     * @returns Immediate completion.
+     */
+    put: () => Promise.resolve(),
   },
   PROVIDER_MODE: 'cache-only',
 });
-/** Capture diagnostic records for assertions using the test-owned mock lifecycle. */
+/** Capture diagnostic records for assertions using the test-owned mock lifecycle.
+ * @param t - Test context owning mock restoration.
+ * @returns Captured object-shaped records without changing diagnostic serialization.
+ */
 function capture(t: TestContext) {
   const logs: Record<string, unknown>[] = [];
   t.mock.method(console, 'info', (value: unknown) => logs.push(record(value)));
@@ -42,12 +51,14 @@ function capture(t: TestContext) {
   t.mock.method(console, 'error', (value: unknown) => logs.push(record(value)));
   return logs;
 }
-/** Flush queued asynchronous fixture work before asserting its outcome. */
+/** Flush queued asynchronous fixture work before asserting its outcome.
+ * @returns Completion after bounded microtask draining under the controlled clock.
+ */
 async function drain() {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
 }
 
-test('diagnostics serialize only stable allowlisted fields, never arbitrary context', (t) => {
+void test('diagnostics serialize only stable allowlisted fields, never arbitrary context', (t) => {
   const logs = capture(t);
   const input = {
     event: 'operation' as const,
@@ -87,7 +98,7 @@ test('diagnostics serialize only stable allowlisted fields, never arbitrary cont
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('untrusted labels, IDs and invalid scalar fields fail closed', (t) => {
+void test('untrusted labels, IDs and invalid scalar fields fail closed', (t) => {
   const logs = capture(t);
   diagnostic({
     event: 'provider',
@@ -128,7 +139,7 @@ test('untrusted labels, IDs and invalid scalar fields fail closed', (t) => {
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('diagnostic sink and hostile error getters cannot alter work or failures', async (t) => {
+void test('diagnostic sink and hostile error getters cannot alter work or failures', async (t) => {
   t.mock.method(console, 'info', () => {
     throw new Error(secret);
   });
@@ -145,16 +156,16 @@ test('diagnostic sink and hostile error getters cannot alter work or failures', 
   unavailable('network-rpc', 'Helius', cause);
   const result = { amount: '900719925474099312345', price: null };
   assert.equal(
-    await refreshDiagnostic('snapshot-refresh', async () => result),
+    await refreshDiagnostic('snapshot-refresh', () => Promise.resolve(result)),
     result,
   );
   await assert.rejects(
-    refreshDiagnostic('snapshot-refresh', async () => {
-      throw cause;
-    }),
+    refreshDiagnostic('snapshot-refresh', () => Promise.reject(cause)),
     (error: unknown) => error === cause,
   );
-  t.mock.method(globalThis, 'fetch', async () => Response.json(result));
+  t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json(result)),
+  );
   assert.deepEqual(
     await providerJson(privateUrl, {}, { provider: 'Jupiter' }),
     result,
@@ -166,10 +177,10 @@ test('diagnostic sink and hostile error getters cannot alter work or failures', 
   assert.equal(response.status, 200);
 });
 
-test('successful provider reads emit no per-call logs or payloads', async (t) => {
+void test('successful provider reads emit no per-call logs or payloads', async (t) => {
   const logs = capture(t);
-  t.mock.method(globalThis, 'fetch', async () =>
-    Response.json({ data: secret }),
+  t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json({ data: secret })),
   );
   assert.deepEqual(
     await providerJson(
@@ -182,14 +193,12 @@ test('successful provider reads emit no per-call logs or payloads', async (t) =>
   assert.deepEqual(logs, []);
 });
 
-test('retry and final failure share operation ID with bounded attempts and durations', async (t) => {
+void test('retry and final failure share operation ID with bounded attempts and durations', async (t) => {
   const logs = capture(t);
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
   t.mock.method(Math, 'random', () => 0);
-  t.mock.method(
-    globalThis,
-    'fetch',
-    async () => new Response(secret, { status: 503 }),
+  t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response(secret, { status: 503 })),
   );
   const pending = providerJson(
     privateUrl,
@@ -223,15 +232,17 @@ test('retry and final failure share operation ID with bounded attempts and durat
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('retry followed by success logs only the retry', async (t) => {
+void test('retry followed by success logs only the retry', async (t) => {
   const logs = capture(t);
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
   t.mock.method(Math, 'random', () => 0);
   let calls = 0;
-  t.mock.method(globalThis, 'fetch', async () =>
-    ++calls === 1
-      ? new Response(secret, { status: 429 })
-      : Response.json({ amount: '1' }),
+  t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(
+      ++calls === 1
+        ? new Response(secret, { status: 429 })
+        : Response.json({ amount: '1' }),
+    ),
   );
   const pending = providerJson(privateUrl, {}, { provider: 'Birdeye' });
   await drain();
@@ -241,32 +252,26 @@ test('retry followed by success logs only the retry', async (t) => {
   assert.equal(logs[0].outcome, 'retry');
 });
 
-test('JSON, transport and timeout diagnostics discard sensitive causes and bodies', async (t) => {
+void test('JSON, transport and timeout diagnostics discard sensitive causes and bodies', async (t) => {
   const logs = capture(t);
-  const fetcher = t.mock.method(
-    globalThis,
-    'fetch',
-    async () => new Response(secret),
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response(secret)),
   );
   await assert.rejects(
     providerJson(privateUrl, {}, { provider: 'Helius RPC' }),
     { kind: 'json' },
   );
   fetcher.mock.restore();
-  const transport = t.mock.method(globalThis, 'fetch', async () => {
-    throw new Error(privateUrl);
-  });
+  const transport = t.mock.method(globalThis, 'fetch', () =>
+    Promise.reject(new Error(privateUrl)),
+  );
   await assert.rejects(
     providerJson(privateUrl, {}, { provider: 'Helius RPC' }),
     { kind: 'network' },
   );
   transport.mock.restore();
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
-  t.mock.method(
-    globalThis,
-    'fetch',
-    async () => new Promise<Response>(() => {}),
-  );
+  t.mock.method(globalThis, 'fetch', () => new Promise<Response>(() => {}));
   const pending = providerJson(
     privateUrl,
     {},
@@ -282,7 +287,7 @@ test('JSON, transport and timeout diagnostics discard sensitive causes and bodie
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('request summaries cover success, preflight, authorization and method denial without URLs/headers', async (t) => {
+void test('request summaries cover success, preflight, authorization and method denial without URLs/headers', async (t) => {
   const logs = capture(t);
   const testEnv = {
     ...env(),
@@ -321,7 +326,7 @@ test('request summaries cover success, preflight, authorization and method denia
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('route exceptions preserve public envelopes while logs omit cache errors', async (t) => {
+void test('route exceptions preserve public envelopes while logs omit cache errors', async (t) => {
   const logs = capture(t);
   const response = await worker.fetch(
     new Request(`https://iris.test/v3/assets?key=${secret}`, {
@@ -330,12 +335,14 @@ test('route exceptions preserve public envelopes while logs omit cache errors', 
     {
       ...env(),
       SNAPSHOTS: {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async () => {
-          throw new Error(privateUrl);
-        },
-        /** Observe or simulate the cache write requested by this test. */
-        put: async () => {},
+        /** Reject cache reads with sensitive fixture context.
+         * @returns A rejection whose raw details must not enter logs.
+         */
+        get: () => Promise.reject(new Error(privateUrl)),
+        /** Accept fixture writes without persistence.
+         * @returns Immediate completion.
+         */
+        put: () => Promise.resolve(),
       },
     },
   );
@@ -352,7 +359,7 @@ test('route exceptions preserve public envelopes while logs omit cache errors', 
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('coalesced refreshes emit one actual-operation summary without altering cache writes', async (t) => {
+void test('coalesced refreshes emit one actual-operation summary without altering cache writes', async (t) => {
   const logs = capture(t);
   const testEnv = env();
   const write = t.mock.method(testEnv.SNAPSHOTS, 'put');
@@ -368,7 +375,7 @@ test('coalesced refreshes emit one actual-operation summary without altering cac
   assert.equal(logs[0].requestId, null);
 });
 
-test('refresh failures retain the original rejection and safe completion fields', async (t) => {
+void test('refresh failures retain the original rejection and safe completion fields', async (t) => {
   const logs = capture(t);
   await assert.rejects(
     refreshHeliusDashboardSample(env(), {}),
@@ -382,9 +389,9 @@ test('refresh failures retain the original rejection and safe completion fields'
   assert.equal(typeof logs[0].operationId, 'string');
 });
 
-test('authenticated refresh summaries correlate with request completion even with optional-source failures', async (t) => {
+void test('authenticated refresh summaries correlate with request completion even with optional-source failures', async (t) => {
   const logs = capture(t);
-  t.mock.method(globalThis, 'fetch', async () => Response.json([]));
+  t.mock.method(globalThis, 'fetch', () => Promise.resolve(Response.json([])));
   const response = await worker.fetch(
     new Request(`https://iris.test/internal/refresh?key=${secret}`, {
       method: 'POST',
@@ -409,20 +416,22 @@ test('authenticated refresh summaries correlate with request completion even wit
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('authenticated and scheduled refresh failures preserve envelope/rejection and emit timed summaries', async (t) => {
+void test('authenticated and scheduled refresh failures preserve envelope/rejection and emit timed summaries', async (t) => {
   const logs = capture(t);
-  t.mock.method(globalThis, 'fetch', async () => Response.json([]));
+  t.mock.method(globalThis, 'fetch', () => Promise.resolve(Response.json([])));
   const cause = new Error(privateUrl);
   const testEnv = {
     ...env(),
     REFRESH_TOKEN: secret,
     SNAPSHOTS: {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async () => {
-        throw cause;
-      },
-      /** Observe or simulate the cache write requested by this test. */
-      put: async () => {},
+      /** Reject fixture reads with the original controlled failure.
+       * @returns The unchanged rejection asserted at the refresh boundary.
+       */
+      get: () => Promise.reject(cause),
+      /** Accept fixture writes without persistence.
+       * @returns Immediate completion.
+       */
+      put: () => Promise.resolve(),
     },
   };
   const response = await worker.fetch(
@@ -448,7 +457,7 @@ test('authenticated and scheduled refresh failures preserve envelope/rejection a
     (log) =>
       log.event === 'refresh' &&
       ['authenticated-refresh', 'scheduled-refresh'].includes(
-        String(log.operation),
+        typeof log.operation === 'string' ? log.operation : '',
       ),
   );
   assert.equal(summaries.length, 2);
@@ -462,7 +471,7 @@ test('authenticated and scheduled refresh failures preserve envelope/rejection a
   assert.equal(JSON.stringify(logs).includes(secret), false);
 });
 
-test('application console logging stays behind the safe diagnostics boundary', () => {
+void test('application console logging stays behind the safe diagnostics boundary', () => {
   const source = new URL('../../src/', import.meta.url);
   for (const file of readdirSync(source).filter(
     (name) => name.endsWith('.ts') && name !== 'diagnostics.ts',
@@ -475,7 +484,7 @@ test('application console logging stays behind the safe diagnostics boundary', (
   }
 });
 
-test('throwing diagnostic sinks cannot interrupt retries or snapshot-before-pointer publication', async (t) => {
+void test('throwing diagnostic sinks cannot interrupt retries or snapshot-before-pointer publication', async (t) => {
   t.mock.method(console, 'info', () => {
     throw new Error(secret);
   });
@@ -487,10 +496,8 @@ test('throwing diagnostic sinks cannot interrupt retries or snapshot-before-poin
     now: Date.parse('2026-10-13T12:00:00Z'),
   });
   t.mock.method(Math, 'random', () => 0);
-  const retryFetch = t.mock.method(
-    globalThis,
-    'fetch',
-    async () => new Response(secret, { status: 503 }),
+  const retryFetch = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response(secret, { status: 503 })),
   );
   const pending = providerJson(privateUrl, {}, { provider: 'Jupiter' });
   const rejected = assert.rejects(pending, { kind: 'http', status: 503 });
@@ -499,32 +506,41 @@ test('throwing diagnostic sinks cannot interrupt retries or snapshot-before-poin
   await rejected;
   assert.equal(retryFetch.mock.callCount(), 2);
   retryFetch.mock.restore();
-  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
-    const url = String(input);
-    if (url.includes('helius-rpc')) return Response.json({ result: 123 });
-    if (url.includes('/toptraded/'))
-      return Response.json([
-        {
-          id: SOL_MINT,
-          symbol: 'SOL',
-          name: 'Solana',
-          decimals: 9,
-          isVerified: true,
-        },
-      ]);
-    return Response.json([]);
-  });
+  t.mock.method(globalThis, 'fetch', (input: string | URL | Request) =>
+    Promise.resolve().then(() => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes('helius-rpc')) return Response.json({ result: 123 });
+      if (url.includes('/toptraded/'))
+        return Response.json([
+          {
+            id: SOL_MINT,
+            symbol: 'SOL',
+            name: 'Solana',
+            decimals: 9,
+            isVerified: true,
+          },
+        ]);
+      return Response.json([]);
+    }),
+  );
   const writes: { key: string; value: string }[] = [];
   const testEnv = {
     ...env(),
     HELIUS_API_KEY: secret,
     JUPITER_API_KEY: secret,
     SNAPSHOTS: {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async () => null,
-      /** Observe or simulate the cache write requested by this test. */
-      put: async (key: string, value: string) => {
+      /** Read an absent cache entry.
+       * @returns Null to require complete replacement publication.
+       */
+      get: () => Promise.resolve(null),
+      /** Record data-before-pointer publication despite failing diagnostic sinks.
+       * @param key - Requested immutable data or pointer identity.
+       * @param value - Complete serialized payload.
+       * @returns Completion after recording the write.
+       */
+      put: (key: string, value: string) => {
         writes.push({ key, value });
+        return Promise.resolve();
       },
     },
   };

@@ -14,7 +14,9 @@ const nodePolicyTest = new URL(
   import.meta.url,
 ).href;
 
-/** Reject handwritten application JavaScript outside the explicitly permitted tooling surfaces. */
+/** Reject handwritten application JavaScript outside the explicitly permitted tooling surfaces.
+ * @param directory - Source or test directory URL to inspect recursively.
+ */
 async function assertTypeScriptOnly(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = new URL(
@@ -35,7 +37,7 @@ await assertTypeScriptOnly(new URL('../tests/', import.meta.url));
 
 const eslint = new ESLint();
 const strictProbe = await eslint.lintText('export const unchecked: any = 1;', {
-  filePath: 'src/tooling-probe.ts',
+  filePath: 'src/record.ts',
 });
 assert.ok(
   strictProbe[0].messages.some(

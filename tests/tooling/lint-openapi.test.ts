@@ -34,7 +34,10 @@ const document = {
   },
 };
 
-/** Run the OpenAPI checker against the controlled document fixture. */
+/** Run the OpenAPI checker against the controlled document fixture.
+ * @param value - Controlled JSON object or raw malformed YAML fixture.
+ * @returns Captured process status and diagnostics after cleaning up the fixture file.
+ */
 function runDocument(value: unknown) {
   const directory = mkdtempSync(path.join(tmpdir(), 'iris-lint-'));
   try {
@@ -54,20 +57,20 @@ function runDocument(value: unknown) {
   }
 }
 
-test('core lint accepts the Iris contract', () => {
+void test('core lint accepts the Iris contract', () => {
   const result = runDocument(
     readFileSync(path.join(root, 'openapi.yaml'), 'utf8'),
   );
   assert.equal(result.status, 0, result.output);
 });
 
-test('core lint preserves both approved exceptions', () => {
+void test('core lint preserves both approved exceptions', () => {
   const result = runDocument(document);
   assert.equal(result.status, 0, result.output);
   assert.match(result.output, /0 error\(s\), 0 warning\(s\)/);
 });
 
-test('core lint fails on recommended-rule errors with useful diagnostics', () => {
+void test('core lint fails on recommended-rule errors with useful diagnostics', () => {
   const invalid = structuredClone(document);
   delete record(invalid.paths['/health'].get).responses;
   const result = runDocument(invalid);
@@ -76,13 +79,13 @@ test('core lint fails on recommended-rule errors with useful diagnostics', () =>
   assert.match(result.output, /openapi\.json/);
 });
 
-test('core lint fails on malformed YAML', () => {
+void test('core lint fails on malformed YAML', () => {
   const result = runDocument('openapi: [');
   assert.equal(result.status, 1, result.output);
   assert.match(result.output, /parse|YAML|end of the stream/i);
 });
 
-test('core lint fails when the input document is missing', () => {
+void test('core lint fails when the input document is missing', () => {
   const result = spawnSync(
     process.execPath,
     [script, 'nonexistent-openapi.yaml'],
@@ -93,7 +96,7 @@ test('core lint fails when the input document is missing', () => {
   assert.match(result.stdout + result.stderr, /nonexistent-openapi.yaml/);
 });
 
-test('core lint retains warning-only success semantics', () => {
+void test('core lint retains warning-only success semantics', () => {
   const warning = structuredClone(document);
   delete record(warning.info).license;
   const result = runDocument(warning);

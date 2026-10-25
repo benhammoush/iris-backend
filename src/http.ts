@@ -3,12 +3,27 @@
  * @packageDocumentation
  */
 
-/** Create or normalize a request identifier for response and diagnostic correlation. */
-export function requestId(request: { headers: Pick<Headers, 'get'> }): string {
+/** Minimal request boundary used for correlation and authentication headers. */
+export interface HeaderRequest {
+  headers: Pick<Headers, 'get'>;
+}
+
+/** Create or normalize a request identifier for response and diagnostic correlation.
+ * @param request - Request exposing the runtime correlation header.
+ * @returns Its nonempty cf-ray header or a newly generated UUID.
+ */
+export function requestId(request: HeaderRequest): string {
   return request.headers.get('cf-ray') || crypto.randomUUID();
 }
 
-/** Serialize the response envelope with explicit status, request correlation and CORS headers. */
+/** Serialize the response envelope with explicit status, request correlation and CORS headers.
+ * @param body - Public response payload to serialize.
+ * @param status - HTTP response status.
+ * @param requestId - Correlation identifier written to the response header.
+ * @param origin - Optional allowed browser origin.
+ * @param extraHeaders - Additional response headers, including explicit cache policy overrides.
+ * @returns A correlated JSON response with scoped CORS and cache headers.
+ */
 export function json(
   body: unknown,
   status: number,
@@ -28,7 +43,14 @@ export function json(
   return new Response(JSON.stringify(body), { status, headers });
 }
 
-/** Build a public error envelope without leaking internal failure details. */
+/** Build a public error envelope without leaking internal failure details.
+ * @param code - Stable public error classification.
+ * @param message - Controlled explanation safe for the caller.
+ * @param status - HTTP error status.
+ * @param requestId - Correlation identifier for this failure.
+ * @param origin - Optional allowed browser origin.
+ * @returns A non-cacheable public JSON error response.
+ */
 export function error(
   code: string,
   message: string,

@@ -11,94 +11,105 @@ import {
   refreshDefiLlamaDashboard,
 } from '../../src/defillama.ts';
 
-test('refresh normalizes, filters, sorts, and caches Solana DefiLlama data', async () => {
+void test('refresh normalizes, filters, sorts, and caches Solana DefiLlama data', async () => {
   const originalFetch = globalThis.fetch;
   const writes = new Map<
     string,
     { value: string; options: { expirationTtl?: number } }
   >();
-  globalThis.fetch = async (url) => {
-    if (String(url).includes('/overview/dexs/Solana'))
-      return Response.json({
-        protocols: [
-          {
-            name: 'Smaller',
-            slug: 'smaller',
-            logo: 'https://icons.example/smaller',
-            total24h: 10,
-            total7d: 50,
-            change_1d: -2,
-          },
-          {
-            name: 'Larger',
-            slug: 'larger',
-            logo: 'https://icons.example/larger',
-            total24h: 20,
-            total7d: 70,
-            change_1d: 3,
-          },
-          { name: 'Invalid' },
-        ],
-      });
-    return Response.json([
-      {
-        name: 'No Solana',
-        slug: 'no-solana',
-        chains: ['Ethereum'],
-        chainTvls: { Ethereum: 100 },
-      },
-      { name: 'No chains', slug: 'no-chains', chainTvls: { Solana: 300 } },
-      {
-        name: 'Small protocol',
-        slug: 'small-protocol',
-        logo: 'https://icons.example/small',
-        chains: ['Solana'],
-        category: 'DEX',
-        chainTvls: { Solana: 100 },
-        change_1d: -1,
-        change_7d: 4,
-      },
-      {
-        name: 'Large protocol',
-        slug: 'large-protocol',
-        logo: 'https://icons.example/large',
-        chains: ['Ethereum', 'Solana'],
-        category: 'Lending',
-        chainTvls: { Solana: 200 },
-        change_1d: 2,
-        change_7d: 5,
-      },
-      {
-        name: 'Protocol three',
-        slug: 'protocol-three',
-        chains: ['Solana'],
-        chainTvls: { Solana: 90 },
-      },
-      {
-        name: 'Protocol four',
-        slug: 'protocol-four',
-        chains: ['Solana'],
-        chainTvls: { Solana: 80 },
-      },
-      {
-        name: 'Protocol five',
-        slug: 'protocol-five',
-        chains: ['Solana'],
-        chainTvls: { Solana: 70 },
-      },
-      {
-        name: 'Protocol six',
-        slug: 'protocol-six',
-        chains: ['Solana'],
-        chainTvls: { Solana: 60 },
-      },
-    ]);
-  };
+  globalThis.fetch = (url) =>
+    Promise.resolve().then(() => {
+      if (
+        (url instanceof Request ? url.url : url.toString()).includes(
+          '/overview/dexs/Solana',
+        )
+      )
+        return Response.json({
+          protocols: [
+            {
+              name: 'Smaller',
+              slug: 'smaller',
+              logo: 'https://icons.example/smaller',
+              total24h: 10,
+              total7d: 50,
+              change_1d: -2,
+            },
+            {
+              name: 'Larger',
+              slug: 'larger',
+              logo: 'https://icons.example/larger',
+              total24h: 20,
+              total7d: 70,
+              change_1d: 3,
+            },
+            { name: 'Invalid' },
+          ],
+        });
+      return Response.json([
+        {
+          name: 'No Solana',
+          slug: 'no-solana',
+          chains: ['Ethereum'],
+          chainTvls: { Ethereum: 100 },
+        },
+        { name: 'No chains', slug: 'no-chains', chainTvls: { Solana: 300 } },
+        {
+          name: 'Small protocol',
+          slug: 'small-protocol',
+          logo: 'https://icons.example/small',
+          chains: ['Solana'],
+          category: 'DEX',
+          chainTvls: { Solana: 100 },
+          change_1d: -1,
+          change_7d: 4,
+        },
+        {
+          name: 'Large protocol',
+          slug: 'large-protocol',
+          logo: 'https://icons.example/large',
+          chains: ['Ethereum', 'Solana'],
+          category: 'Lending',
+          chainTvls: { Solana: 200 },
+          change_1d: 2,
+          change_7d: 5,
+        },
+        {
+          name: 'Protocol three',
+          slug: 'protocol-three',
+          chains: ['Solana'],
+          chainTvls: { Solana: 90 },
+        },
+        {
+          name: 'Protocol four',
+          slug: 'protocol-four',
+          chains: ['Solana'],
+          chainTvls: { Solana: 80 },
+        },
+        {
+          name: 'Protocol five',
+          slug: 'protocol-five',
+          chains: ['Solana'],
+          chainTvls: { Solana: 70 },
+        },
+        {
+          name: 'Protocol six',
+          slug: 'protocol-six',
+          chains: ['Solana'],
+          chainTvls: { Solana: 60 },
+        },
+      ]);
+    });
   try {
     const dashboard = await refreshDefiLlamaDashboard(
       {
-        /** Observe or simulate the cache write requested by this test. */
-        put: async (key, value, options) => writes.set(key, { value, options }),
+        /** Capture publication for expiry assertions.
+         * @param key - Dashboard identity being written.
+         * @param value - Complete serialized dashboard.
+         * @param options - Expiration policy retained for assertions.
+         * @returns Completion after recording the write.
+         */
+        put: (key, value, options) =>
+          Promise.resolve(writes.set(key, { value, options })),
       },
       new Date('2026-10-06T00:00:00.000Z'),
     );
@@ -124,7 +135,7 @@ test('refresh normalizes, filters, sorts, and caches Solana DefiLlama data', asy
   }
 });
 
-test('load marks stale caches and rejects expired data', async () => {
+void test('load marks stale caches and rejects expired data', async () => {
   const cached = {
     source: 'defillama',
     fetchedAt: '2026-10-06T00:00:00.000Z',
@@ -132,8 +143,10 @@ test('load marks stale caches and rejects expired data', async () => {
     protocols: { total: 0, items: [] },
   };
   const kv = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async () => cached,
+    /** Read a fixed stored dashboard.
+     * @returns The unchanged envelope used for exact age classification.
+     */
+    get: () => Promise.resolve(cached),
   };
   assert.equal(
     (await loadDefiLlamaDashboard(kv, Date.parse('2026-10-06T00:16:00.000Z')))

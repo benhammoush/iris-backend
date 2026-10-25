@@ -4,10 +4,13 @@
   "description": "Iris market and curated-wallet API on Cloudflare Workers",
   "type": "module",
   "main": "src/index.ts",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "ci:quality": "npm run check",
     "ci:prepare": "node scripts/ci-prepare.mjs",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "check:tooling": "node scripts/check-tooling.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

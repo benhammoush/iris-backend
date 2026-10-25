@@ -14,7 +14,10 @@ let nextIdentity = 0;
 
 // Keys stay in isolate memory only. Object/function parts compare by identity;
 // primitive parts are encoded without delimiter or null/undefined collisions.
-/** Encode a key component without allowing adjacent values to collide. */
+/** Encode a key component without allowing adjacent values to collide.
+ * @param part - Primitive or object identity component of the operation key.
+ * @returns A type-tagged value or stable isolate-local object identity.
+ */
 function encode(part: KeyPart) {
   if (
     part !== null &&
@@ -30,7 +33,12 @@ function encode(part: KeyPart) {
   return [typeof part, part];
 }
 
-/** Share equivalent in-flight work only within the supplied scope; discard the entry after completion. */
+/** Share equivalent in-flight work only within the supplied scope; discard the entry after completion.
+ * @param scope - Binding/configuration owner; absent scope disables sharing.
+ * @param parts - Collision-safe operation and configuration identity components.
+ * @param work - Operation whose promise and result type the key identifies at every call site.
+ * @returns The matching pending operation, or a fresh operation with cleanup after settlement.
+ */
 export function singleFlight<T>(
   scope: object | null | undefined,
   parts: readonly KeyPart[],
@@ -57,7 +65,11 @@ export function singleFlight<T>(
   return result;
 }
 
-/** Include effective provider configuration in shared-work identity to prevent cross-configuration reuse. */
+/** Include effective provider configuration in shared-work identity to prevent cross-configuration reuse.
+ * @param env - Environment fallback credentials; key material stays in isolate memory.
+ * @param config - Effective selected provider credentials and mode.
+ * @returns Configuration identity components preventing cross-provider reuse.
+ */
 export function providerKey(env: Env, config: ProviderConfig) {
   return [
     config.heliusApiKey || env.HELIUS_API_KEY,

@@ -11,7 +11,7 @@ import {
   summarizeLatestBlock,
 } from '../../src/network.ts';
 
-test('network summaries safely reject malformed samples and preserve weighted non-vote behavior', () => {
+void test('network summaries safely reject malformed samples and preserve weighted non-vote behavior', () => {
   const result = summarizePerformance([
     null,
     42,
@@ -24,7 +24,7 @@ test('network summaries safely reject malformed samples and preserve weighted no
   assert.equal(summarizePerformance(null).tps, null);
 });
 
-test('block and production arithmetic use only finite provider quantities', () => {
+void test('block and production arithmetic use only finite provider quantities', () => {
   const production = summarizeProduction({
     value: { byIdentity: { a: [10, 8], b: [20, 16] } },
   });
