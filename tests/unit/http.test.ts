@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { error, json, requestId } from '../../src/http.ts';
 
-test('HTTP helpers preserve request IDs, CORS and explicit cache headers', async () => {
+void test('HTTP helpers preserve request IDs, CORS and explicit cache headers', async () => {
   const request = new Request('https://iris.test/health', {
     headers: { 'cf-ray': 'ray-test' },
   });
@@ -31,7 +31,7 @@ test('HTTP helpers preserve request IDs, CORS and explicit cache headers', async
   });
 });
 
-test('HTTP errors preserve the public envelope without adding an origin', async () => {
+void test('HTTP errors preserve the public envelope without adding an origin', async () => {
   const response = error('NOT_FOUND', 'Unavailable', 404, 'request-test');
   assert.equal(response.status, 404);
   assert.equal(response.headers.get('access-control-allow-origin'), null);

@@ -19,13 +19,20 @@ interface WorkerRequest {
   url: string;
   method: string;
   headers: {
-    /** Read an HTTP request header without depending on a concrete Headers instance. */
+    /** Read an HTTP request header without depending on a concrete Headers instance.
+     * @param name - Case-insensitive header name.
+     * @returns Its value or null when absent.
+     */
     get: (name: string) => string | null;
   };
   body?: ReadableStream<Uint8Array> | null;
 }
 
-/** Resolve the permitted browser origin from the validated Worker configuration. */
+/** Resolve the permitted browser origin from the validated Worker configuration.
+ * @param request - Incoming request carrying an optional browser origin.
+ * @param config - Validated CORS allowlist.
+ * @returns The allowed origin, or null for absent/denied origins.
+ */
 function allowedOrigin(
   request: WorkerRequest,
   config: WorkerConfig,
@@ -34,7 +41,10 @@ function allowedOrigin(
   return origin && config.corsOrigins.includes(origin) ? origin : null;
 }
 
-/** Refresh dashboard data independently of browser traffic as scheduled backstop work. */
+/** Refresh dashboard data independently of browser traffic as scheduled backstop work.
+ * @param env - Dashboard cache and provider bindings.
+ * @param config - Effective selected provider settings.
+ */
 async function refreshHeliusDashboardBackstop(env: Env, config: WorkerConfig) {
   try {
     await refreshHeliusDashboardSample(env, config);
@@ -44,7 +54,9 @@ async function refreshHeliusDashboardBackstop(env: Env, config: WorkerConfig) {
   }
 }
 
-/** Refresh the external dashboard cache without making browser reads responsible for scheduled upkeep. */
+/** Refresh the external dashboard cache without making browser reads responsible for scheduled upkeep.
+ * @param env - Dashboard cache and stale-retention policy bindings.
+ */
 async function refreshDefiLlamaBackstop(env: Env) {
   try {
     await refreshDefiLlamaDashboard(
@@ -59,7 +71,12 @@ async function refreshDefiLlamaBackstop(env: Env) {
 }
 
 const worker = {
-  /** Handle the incoming HTTP request using the environment bindings supplied by the runtime. */
+  /** Handle the incoming HTTP request using the environment bindings supplied by the runtime.
+   * @param request - Incoming HTTP request at the Worker boundary.
+   * @param env - Selected runtime bindings and configuration.
+   * @param _ctx - Optional runtime context; refresh work is awaited explicitly.
+   * @returns A correlated public or authenticated private response.
+   */
   async fetch(
     request: WorkerRequest,
     env: Env,
@@ -161,8 +178,17 @@ const worker = {
       );
     }
   },
-  /** Run bounded background refresh or delivery work for the scheduled invocation. */
-  async scheduled(_event: unknown, env: Env, _ctx?: unknown): Promise<void> {
+  /** Run bounded background refresh or delivery work for the scheduled invocation.
+   * @param _event - Platform schedule event; refresh eligibility comes from configuration.
+   * @param env - Selected cache and provider bindings.
+   * @param _ctx - Optional runtime context; all scheduled refreshes are awaited.
+   */
+  async scheduled(
+    this: void,
+    _event: unknown,
+    env: Env,
+    _ctx?: unknown,
+  ): Promise<void> {
     await refreshDiagnostic('scheduled-refresh', async () => {
       const config = getConfig(env);
       await Promise.all([
@@ -175,7 +201,12 @@ const worker = {
 };
 
 export default {
-  /** Handle the incoming HTTP request using the environment bindings supplied by the runtime. */
+  /** Handle the incoming HTTP request using the environment bindings supplied by the runtime.
+   * @param request - Incoming HTTP request to route and measure.
+   * @param env - Selected runtime bindings and configuration.
+   * @param ctx - Optional runtime context forwarded to the request handler.
+   * @returns The routed response after emitting bounded request diagnostics.
+   */
   async fetch(
     request: WorkerRequest,
     env: Env,

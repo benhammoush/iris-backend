@@ -7,7 +7,10 @@ import { CHAIN, SOL_MINT } from './constants.ts';
 
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
-/** Validate the base58 alphabet and decoded public-key length at the input boundary. */
+/** Validate the base58 alphabet and decoded public-key length at the input boundary.
+ * @param value - Unknown candidate Solana public key.
+ * @returns Whether its alphabet and decoded length represent a 32-byte public key.
+ */
 export function isBase58PublicKey(value: unknown): value is string {
   if (
     typeof value !== 'string' ||
@@ -16,7 +19,7 @@ export function isBase58PublicKey(value: unknown): value is string {
     ![...value].every((character) => BASE58.includes(character))
   )
     return false;
-  let bytes = [0];
+  const bytes = [0];
   for (const character of value) {
     let carry = BASE58.indexOf(character);
     for (let index = 0; index < bytes.length; index += 1) {
@@ -34,7 +37,11 @@ export function isBase58PublicKey(value: unknown): value is string {
   return leadingZeroes + encodedBytes === 32;
 }
 
-/** Format an exact atomic quantity at the supplied decimal precision, or return null for invalid input. */
+/** Format an exact atomic quantity at the supplied decimal precision, or return null for invalid input.
+ * @param rawAmount - Unknown quantity requiring unsigned integer text.
+ * @param decimals - Unknown decimal precision requiring a nonnegative integer.
+ * @returns Exact decimal text with insignificant fractional zeroes removed, or null.
+ */
 export function formatAtomicAmount(
   rawAmount: unknown,
   decimals: unknown,
@@ -54,7 +61,10 @@ export function formatAtomicAmount(
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
-/** Sum supported atomic quantities exactly with bigint arithmetic, or return null for invalid input. */
+/** Sum supported atomic quantities exactly with bigint arithmetic, or return null for invalid input.
+ * @param amounts - Supported primitive quantities accepted by BigInt.
+ * @returns Their exact integer sum as decimal text, or null for invalid input.
+ */
 export function addAtomicAmounts(
   amounts: readonly (string | number | bigint | boolean)[],
 ): string | null {
@@ -67,7 +77,10 @@ export function addAtomicAmounts(
   }
 }
 
-/** Convert a display decimal only when its precision can be represented safely for valuation. */
+/** Convert a display decimal only when its precision can be represented safely for valuation.
+ * @param value - Unknown unsigned decimal quantity text.
+ * @returns Its finite numeric value only within the existing precision limit, otherwise null.
+ */
 export function decimalValue(value: unknown): number | null {
   if (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value)) return null;
   // A portfolio value must not silently round an amount that cannot be represented safely.
@@ -76,7 +89,10 @@ export function decimalValue(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Build canonical Solana asset identifiers and the native-asset flag from the mint. */
+/** Build canonical Solana asset identifiers and the native-asset flag from the mint.
+ * @param mint - Solana mint identity to retain unchanged.
+ * @returns Canonical chain, asset, mint and contract identities plus native-asset status.
+ */
 export function assetIdentity(mint: string) {
   return {
     chain: CHAIN,

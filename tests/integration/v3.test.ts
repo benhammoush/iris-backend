@@ -9,6 +9,9 @@ import {
   fetchStub,
   testEnv,
   type FetchStubOptions,
+  responseJson,
+  type ResourceEnvelope,
+  type ErrorEnvelope,
 } from '../support/support.ts';
 import { array, record } from '../../src/record.ts';
 import type { SnapshotStore } from '../../src/env.ts';
@@ -35,7 +38,7 @@ import {
 
 const env = testEnv;
 
-test('v3 asset mapping has only canonical fields and exact finite volume behavior', () => {
+void test('v3 asset mapping has only canonical fields and exact finite volume behavior', () => {
   const asset = mapV3Asset({
     id: SOL_MINT,
     symbol: 'SOL',
@@ -78,7 +81,7 @@ test('v3 asset mapping has only canonical fields and exact finite volume behavio
   );
 });
 
-test('v3 history points use timestamp and priceUsd without changing v2 cache points', () => {
+void test('v3 history points use timestamp and priceUsd without changing v2 cache points', () => {
   const points = [
     { date: '2026-10-01T00:00:00.000Z', price: 1.25 },
     { date: 'invalid', price: 2 },
@@ -94,13 +97,11 @@ test('v3 history points use timestamp and priceUsd without changing v2 cache poi
   assert.equal(mapV3HistoryPoints(null), null);
 });
 
-test('v3 canonical mint routes return range-aware Birdeye close-price history and OHLCV candles', async () => {
+void test('v3 canonical mint routes return range-aware Birdeye close-price history and OHLCV candles', async () => {
   const originalFetch = fetchStub.fetch;
   const timestamp = Math.floor(Date.now() / 1000);
-  fetchStub.fetch = async () => ({
-    ok: true,
-    /** Return the controlled JSON payload for this provider-response fixture. */
-    json: async () => ({
+  fetchStub.fetch = () =>
+    Response.json({
       success: true,
       data: {
         items: [
@@ -115,8 +116,7 @@ test('v3 canonical mint routes return range-aware Birdeye close-price history an
           },
         ],
       },
-    }),
-  });
+    });
   try {
     const history = await worker.fetch(
       new Request(
@@ -137,14 +137,26 @@ test('v3 canonical mint routes return range-aware Birdeye close-price history an
       env({ BIRDEYE_API_KEY: 'key' }),
       {},
     );
-    const historyPoint = (await history.json()).data.points[0];
-    const detailPoint = (await detail.json()).data.history.points[0];
+    const historyPoint = (
+      await responseJson<ResourceEnvelope<{ points: unknown[] }>>(history)
+    ).data.points[0];
+    const detailPoint = (
+      await responseJson<ResourceEnvelope<{ history: { points: unknown[] } }>>(
+        detail,
+      )
+    ).data.history.points[0];
     assert.deepEqual(historyPoint, {
       timestamp: new Date(timestamp * 1000).toISOString(),
       priceUsd: 150,
     });
     assert.deepEqual(detailPoint, historyPoint);
-    const candleBody = await candles.json();
+    const candleBody = await responseJson<
+      ResourceEnvelope<{
+        timeframe: string;
+        count: number;
+        candles: { volumeUsd: number }[];
+      }>
+    >(candles);
     assert.equal(candleBody.data.timeframe, '1D');
     assert.equal(candleBody.data.count, 300);
     assert.equal(candleBody.data.candles[0].volumeUsd, 150);
@@ -153,31 +165,27 @@ test('v3 canonical mint routes return range-aware Birdeye close-price history an
   }
 });
 
-test('v3 candle pagination requests the preceding provider window and rejects invalid cursors', async () => {
+void test('v3 candle pagination requests the preceding provider window and rejects invalid cursors', async () => {
   const originalFetch = fetchStub.fetch;
   let requestUrl = '';
-  fetchStub.fetch = async (url) => {
+  fetchStub.fetch = (url) => {
     requestUrl = String(url);
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => ({
-        success: true,
-        data: {
-          items: [
-            {
-              unix_time: 1_760_000_000,
-              o: 149,
-              h: 151,
-              l: 148,
-              c: 150,
-              v: 1,
-              v_usd: 150,
-            },
-          ],
-        },
-      }),
-    };
+    return Response.json({
+      success: true,
+      data: {
+        items: [
+          {
+            unix_time: 1_760_000_000,
+            o: 149,
+            h: 151,
+            l: 148,
+            c: 150,
+            v: 1,
+            v_usd: 150,
+          },
+        ],
+      },
+    });
   };
   try {
     const response = await worker.fetch(
@@ -199,7 +207,10 @@ test('v3 candle pagination requests the preceding provider window and rejects in
       {},
     );
     assert.equal(invalid.status, 400);
-    assert.equal((await invalid.json()).error.code, 'INVALID_CANDLE_BEFORE');
+    assert.equal(
+      (await responseJson<ErrorEnvelope>(invalid)).error.code,
+      'INVALID_CANDLE_BEFORE',
+    );
     const invalidTimeframe = await worker.fetch(
       new Request(
         `https://api.example/v3/assets/mint/${SOL_MINT}/candles?timeframe=1h`,
@@ -209,7 +220,7 @@ test('v3 candle pagination requests the preceding provider window and rejects in
     );
     assert.equal(invalidTimeframe.status, 400);
     assert.equal(
-      (await invalidTimeframe.json()).error.code,
+      (await responseJson<ErrorEnvelope>(invalidTimeframe)).error.code,
       'INVALID_CANDLE_TIMEFRAME',
     );
   } finally {
@@ -217,33 +228,37 @@ test('v3 candle pagination requests the preceding provider window and rejects in
   }
 });
 
-test('candle cache records expire after the existing stale window', async () => {
+void test('candle cache records expire after the existing stale window', async () => {
   const originalFetch = fetchStub.fetch;
   const writes: {
     key: string;
     value: string;
     options?: { expirationTtl?: number };
   }[] = [];
-  fetchStub.fetch = async () => ({
-    ok: true,
-    /** Return the controlled JSON payload for this provider-response fixture. */
-    json: async () => ({
+  fetchStub.fetch = () =>
+    Response.json({
       success: true,
       data: {
         items: [
           { unix_time: 1_760_000_000, o: 1, h: 2, l: 1, c: 2, v: 3, v_usd: 6 },
         ],
       },
-    }),
-  });
+    });
   try {
     await candlesForAsset(
       {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async () => null,
-        /** Observe or simulate the cache write requested by this test. */
-        put: async (key, value, options) =>
-          writes.push({ key, value, options }),
+        /** Read an absent candle entry.
+         * @returns Null to require fresh controlled-provider publication.
+         */
+        get: () => Promise.resolve(null),
+        /** Capture candle publication and its retention policy.
+         * @param key - Complete candle resource identity.
+         * @param value - Serialized candle envelope.
+         * @param options - Expiration policy retained for assertions.
+         * @returns Completion after recording the write.
+         */
+        put: (key, value, options) =>
+          Promise.resolve(writes.push({ key, value, options })),
       },
       SOL_MINT,
       'key',
@@ -256,52 +271,47 @@ test('candle cache records expire after the existing stale window', async () => 
   }
 });
 
-test('v3 resolves a valid mint outside the snapshot through Jupiter', async () => {
+void test('v3 resolves a valid mint outside the snapshot through Jupiter', async () => {
   const mint = 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN';
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (url) =>
+  fetchStub.fetch = (url) =>
     String(url).includes('/tokens/v2/search')
-      ? {
-          ok: true,
-          /** Return the controlled JSON payload for this provider-response fixture. */
-          json: async () => [
-            {
-              id: mint,
-              symbol: 'JUP',
-              name: 'Jupiter',
-              decimals: 6,
-              isVerified: true,
-              usdPrice: 1,
-            },
-          ],
-        }
-      : {
-          ok: true,
-          /** Return the controlled JSON payload for this provider-response fixture. */
-          json: async () => ({
-            success: true,
-            data: {
-              items: [
-                {
-                  unix_time: 1_760_000_000,
-                  o: 1,
-                  h: 1,
-                  l: 1,
-                  c: 1,
-                  v: 1,
-                  v_usd: 1,
-                },
-              ],
-            },
-          }),
-        };
+      ? Response.json([
+          {
+            id: mint,
+            symbol: 'JUP',
+            name: 'Jupiter',
+            decimals: 6,
+            isVerified: true,
+            usdPrice: 1,
+          },
+        ])
+      : Response.json({
+          success: true,
+          data: {
+            items: [
+              {
+                unix_time: 1_760_000_000,
+                o: 1,
+                h: 1,
+                l: 1,
+                c: 1,
+                v: 1,
+                v_usd: 1,
+              },
+            ],
+          },
+        });
   try {
     const response = await worker.fetch(
       new Request(`https://api.example/v3/assets/mint/${mint}`),
       env({ BIRDEYE_API_KEY: 'key', JUPITER_API_KEY: 'key' }),
       {},
     );
-    const body = await response.json();
+    const body =
+      await responseJson<ResourceEnvelope<{ mint: string; symbol: string }>>(
+        response,
+      );
     assert.equal(response.status, 200);
     assert.equal(body.data.mint, mint);
     assert.equal(body.data.symbol, 'JUP');
@@ -310,7 +320,7 @@ test('v3 resolves a valid mint outside the snapshot through Jupiter', async () =
   }
 });
 
-test('v3 history rejects unsupported ranges', async () => {
+void test('v3 history rejects unsupported ranges', async () => {
   const response = await worker.fetch(
     new Request(
       `https://api.example/v3/assets/mint/${SOL_MINT}/history?range=30d`,
@@ -319,10 +329,13 @@ test('v3 history rejects unsupported ranges', async () => {
     {},
   );
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.code, 'INVALID_HISTORY_RANGE');
+  assert.equal(
+    (await responseJson<ErrorEnvelope>(response)).error.code,
+    'INVALID_HISTORY_RANGE',
+  );
 });
 
-test('v3 Parsed Events mapping preserves string raw amounts and rejects unsafe numbers', () => {
+void test('v3 Parsed Events mapping preserves string raw amounts and rejects unsafe numbers', () => {
   const event = mapV3Event({
     parserStatus: 'OK',
     signature: 'signature',
@@ -349,56 +362,44 @@ test('v3 Parsed Events mapping preserves string raw amounts and rejects unsafe n
   assert.equal(event.transfers.tokens[1].atomicAmount, '7');
 });
 
-test('Helius on-chain profile preserves atomic supply and exposes only provider-backed mint fields', async () => {
+void test('Helius on-chain profile preserves atomic supply and exposes only provider-backed mint fields', async () => {
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (_url, options) => {
-    const request = JSON.parse(options.body);
+  fetchStub.fetch = (_url, options) => {
+    const request = JSON.parse(options.body) as { method: string };
     if (request.method === 'getAsset')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: {
-            interface: 'FungibleToken',
-            last_indexed_slot: 123,
-            mutable: false,
-            content: {
-              json_uri: 'https://metadata.example',
-              links: { image: 'https://image.example' },
-              metadata: {
-                name: 'Example',
-                symbol: 'EX',
-                description: 'An example',
-                external_url: 'https://example.com',
-              },
-            },
-            token_info: {
-              decimals: 6,
-              supply: '9007199254740993123',
-              mint_authority: 'mint-authority',
-              freeze_authority: null,
-              token_program: 'Tokenkeg',
-              extensions: ['transferFeeConfig'],
+      return Response.json({
+        result: {
+          interface: 'FungibleToken',
+          last_indexed_slot: 123,
+          mutable: false,
+          content: {
+            json_uri: 'https://metadata.example',
+            links: { image: 'https://image.example' },
+            metadata: {
+              name: 'Example',
+              symbol: 'EX',
+              description: 'An example',
+              external_url: 'https://example.com',
             },
           },
-        }),
-      };
+          token_info: {
+            decimals: 6,
+            supply: '9007199254740993123',
+            mint_authority: 'mint-authority',
+            freeze_authority: null,
+            token_program: 'Tokenkeg',
+            extensions: ['transferFeeConfig'],
+          },
+        },
+      });
     if (request.method === 'getTokenSupply')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: { value: { amount: '9007199254740993123' } },
-        }),
-      };
+      return Response.json({
+        result: { value: { amount: '9007199254740993123' } },
+      });
     if (request.method === 'getAccountInfo')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: { value: { data: { parsed: { info: { decimals: 6 } } } } },
-        }),
-      };
+      return Response.json({
+        result: { value: { data: { parsed: { info: { decimals: 6 } } } } },
+      });
     throw new Error(`Unexpected ${request.method}`);
   };
   try {
@@ -423,10 +424,13 @@ test('Helius on-chain profile preserves atomic supply and exposes only provider-
   }
 });
 
-test('Helius holder pages preserve atomic balances without claiming unique holders', async () => {
+void test('Helius holder pages preserve atomic balances without claiming unique holders', async () => {
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (_url, options) => {
-    const request = JSON.parse(options.body);
+  fetchStub.fetch = (_url, options) => {
+    const request = JSON.parse(options.body) as {
+      method: string;
+      params: unknown;
+    };
     if (request.method === 'getTokenAccounts') {
       assert.deepEqual(request.params, {
         mint: SOL_MINT,
@@ -434,31 +438,23 @@ test('Helius holder pages preserve atomic balances without claiming unique holde
         limit: 25,
         options: { showZeroBalance: false },
       });
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: {
-            total: 31,
-            cursor: 'cursor',
-            token_accounts: [
-              {
-                address: 'token-account',
-                owner: 'owner',
-                amount: '2500000',
-                frozen: false,
-              },
-            ],
-          },
-        }),
-      };
+      return Response.json({
+        result: {
+          total: 31,
+          cursor: 'cursor',
+          token_accounts: [
+            {
+              address: 'token-account',
+              owner: 'owner',
+              amount: '2500000',
+              frozen: false,
+            },
+          ],
+        },
+      });
     }
     if (request.method === 'getAsset')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: { token_info: { decimals: 6 } } }),
-      };
+      return Response.json({ result: { token_info: { decimals: 6 } } });
     throw new Error(`Unexpected ${request.method}`);
   };
   try {
@@ -489,51 +485,39 @@ test('Helius holder pages preserve atomic balances without claiming unique holde
   }
 });
 
-test('Helius largest accounts preserve atomic values, parsed owners, and two-decimal supply shares', async () => {
+void test('Helius largest accounts preserve atomic values, parsed owners, and two-decimal supply shares', async () => {
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (_url, options) => {
-    const request = JSON.parse(options.body);
+  fetchStub.fetch = (_url, options) => {
+    const request = JSON.parse(options.body) as { method: string };
     if (request.method === 'getTokenLargestAccounts')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: {
-            context: { slot: 123 },
-            value: [
-              { address: 'account-a', amount: '333', decimals: 2 },
-              { address: 'account-b', amount: '1', decimals: 2 },
-            ],
-          },
-        }),
-      };
+      return Response.json({
+        result: {
+          context: { slot: 123 },
+          value: [
+            { address: 'account-a', amount: '333', decimals: 2 },
+            { address: 'account-b', amount: '1', decimals: 2 },
+          ],
+        },
+      });
     if (request.method === 'getTokenSupply')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: { value: { amount: '1000' } } }),
-      };
+      return Response.json({ result: { value: { amount: '1000' } } });
     if (request.method === 'getMultipleAccounts')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: {
-            value: [
-              {
-                data: {
-                  parsed: { info: { owner: 'owner-a', state: 'frozen' } },
-                },
+      return Response.json({
+        result: {
+          value: [
+            {
+              data: {
+                parsed: { info: { owner: 'owner-a', state: 'frozen' } },
               },
-              {
-                data: {
-                  parsed: { info: { owner: 'owner-b', state: 'initialized' } },
-                },
+            },
+            {
+              data: {
+                parsed: { info: { owner: 'owner-b', state: 'initialized' } },
               },
-            ],
-          },
-        }),
-      };
+            },
+          ],
+        },
+      });
     throw new Error(`Unexpected ${request.method}`);
   };
   try {
@@ -573,59 +557,55 @@ test('Helius largest accounts preserve atomic values, parsed owners, and two-dec
   }
 });
 
-test('Helius mint transaction history preserves all mint-address transactions and filters only transfer details by mint', async () => {
+void test('Helius mint transaction history preserves all mint-address transactions and filters only transfer details by mint', async () => {
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (_url, options) => {
+  fetchStub.fetch = (_url, options) => {
     assert.deepEqual(JSON.parse(options.body), {
       address: SOL_MINT,
       limit: 25,
       sortOrder: 'desc',
       commitment: 'confirmed',
     });
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => ({
-        data: [
-          {
-            signature: 'mint-event',
-            parserStatus: 'OK',
-            parsed: {
-              slot: 7,
-              blockTime: 1_760_000_000,
-              transactionStatus: 'OK',
-              summary: {
-                type: 'mint',
-                description: 'Minted',
-                parsedData: { protocol: 'token' },
+    return Response.json({
+      data: [
+        {
+          signature: 'mint-event',
+          parserStatus: 'OK',
+          parsed: {
+            slot: 7,
+            blockTime: 1_760_000_000,
+            transactionStatus: 'OK',
+            summary: {
+              type: 'mint',
+              description: 'Minted',
+              parsedData: { protocol: 'token' },
+            },
+            tokenTransfers: [
+              {
+                mint: SOL_MINT,
+                rawTokenAmount: '2500000',
+                decimals: 6,
+                fromUserAccount: null,
+                toUserAccount: 'recipient',
               },
-              tokenTransfers: [
-                {
-                  mint: SOL_MINT,
-                  rawTokenAmount: '2500000',
-                  decimals: 6,
-                  fromUserAccount: null,
-                  toUserAccount: 'recipient',
-                },
-                { mint: 'other', rawTokenAmount: '1', decimals: 0 },
-              ],
-            },
+              { mint: 'other', rawTokenAmount: '1', decimals: 0 },
+            ],
           },
-          {
-            signature: 'metadata-event',
-            parserStatus: 'OK',
-            parsed: {
-              slot: 6,
-              blockTime: 1_759_999_999,
-              transactionStatus: 'OK',
-              summary: null,
-              tokenTransfers: [],
-            },
+        },
+        {
+          signature: 'metadata-event',
+          parserStatus: 'OK',
+          parsed: {
+            slot: 6,
+            blockTime: 1_759_999_999,
+            transactionStatus: 'OK',
+            summary: null,
+            tokenTransfers: [],
           },
-        ],
-        paginationToken: 'next',
-      }),
-    };
+        },
+      ],
+      paginationToken: 'next',
+    });
   };
   try {
     const page = await loadV3AssetTransactions(
@@ -652,23 +632,27 @@ test('Helius mint transaction history preserves all mint-address transactions an
   }
 });
 
-test('v3 history negative-caches unavailable Birdeye responses', async () => {
-  const values = new Map();
+void test('v3 history negative-caches unavailable Birdeye responses', async () => {
+  const values = new Map<string, unknown>();
   let calls = 0;
   const kv: SnapshotStore = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key) => values.get(key) || null,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async (key, value) => values.set(key, JSON.parse(value)),
+    /** Read the negative-cache fixture.
+     * @param key - Requested candle identity.
+     * @returns Stored unknown JSON or null when absent.
+     */
+    get: (key) => Promise.resolve(values.get(key) ?? null),
+    /** Capture negative-cache publication.
+     * @param key - Requested candle identity.
+     * @param value - Serialized unavailable-data envelope.
+     * @returns Completion after recording the envelope.
+     */
+    put: (key, value) =>
+      Promise.resolve(values.set(key, JSON.parse(value) as unknown)),
   };
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async () => {
+  fetchStub.fetch = () => {
     calls += 1;
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => ({ success: true, data: { items: [] } }),
-    };
+    return Response.json({ success: true, data: { items: [] } });
   };
   try {
     assert.equal(
@@ -685,7 +669,7 @@ test('v3 history negative-caches unavailable Birdeye responses', async () => {
   }
 });
 
-test('v3 history preserves a stale seven-day Birdeye candle cache when the provider reports unavailable', async () => {
+void test('v3 history preserves a stale seven-day Birdeye candle cache when the provider reports unavailable', async () => {
   const timestamp = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const cached = {
     fetchedAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
@@ -703,16 +687,14 @@ test('v3 history preserves a stale seven-day Birdeye candle cache when the provi
     ],
   };
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async () => ({
-    ok: true,
-    /** Return the controlled JSON payload for this provider-response fixture. */
-    json: async () => ({ success: true, data: { items: [] } }),
-  });
+  fetchStub.fetch = () => Response.json({ success: true, data: { items: [] } });
   try {
     const history = await historyForAsset(
       {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async () => cached,
+        /** Read the original stale candle envelope.
+         * @returns Unchanged candle evidence whose age must not be renewed.
+         */
+        get: () => Promise.resolve(cached),
       },
       SOL_MINT,
       'key',
@@ -724,53 +706,51 @@ test('v3 history preserves a stale seven-day Birdeye candle cache when the provi
   }
 });
 
-test('recent transaction samples batch parsed actions, preserve signature order, and retain stale data on failure', async () => {
-  const cache = new Map();
+void test('recent transaction samples batch parsed actions, preserve signature order, and retain stale data on failure', async () => {
+  const cache = new Map<string, unknown>();
   let calls = 0;
   const snapshots: SnapshotStore = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key) => cache.get(key) || null,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async (key, value) => cache.set(key, JSON.parse(value)),
+    /** Read retained transaction evidence.
+     * @param key - Requested sample identity.
+     * @returns Stored unknown JSON or null when absent.
+     */
+    get: (key) => Promise.resolve(cache.get(key) ?? null),
+    /** Publish a complete controlled transaction sample.
+     * @param key - Requested sample identity.
+     * @param value - Complete serialized sample.
+     * @returns Completion after recording the publication.
+     */
+    put: (key, value) =>
+      Promise.resolve(cache.set(key, JSON.parse(value) as unknown)),
   };
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (_url, options) => {
+  fetchStub.fetch = (_url, options) => {
     calls += 1;
-    const request = JSON.parse(options.body);
-    if (request.method === 'getSlot')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: 123 }),
-      };
+    const request = JSON.parse(options.body) as {
+      method?: string;
+      transactions?: unknown[];
+    };
+    if (request.method === 'getSlot') return Response.json({ result: 123 });
     if (request.method === 'getBlock')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: {
-            blockTime: 1_760_000_000,
-            signatures: ['sig-a', 'sig-a', 'sig-b'],
-          },
-        }),
-      };
+      return Response.json({
+        result: {
+          blockTime: 1_760_000_000,
+          signatures: ['sig-a', 'sig-a', 'sig-b'],
+        },
+      });
     if (Array.isArray(request.transactions))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          data: [
-            {
-              signature: 'sig-b',
-              parsed: {
-                summary: null,
-                instructions: [{ instructionName: 'create_account' }],
-              },
+      return Response.json({
+        data: [
+          {
+            signature: 'sig-b',
+            parsed: {
+              summary: null,
+              instructions: [{ instructionName: 'create_account' }],
             },
-            { signature: 'sig-a', parsed: { summary: { type: 'swap' } } },
-          ],
-        }),
-      };
+          },
+          { signature: 'sig-a', parsed: { summary: { type: 'swap' } } },
+        ],
+      });
     throw new Error(`Unexpected ${request.method}`);
   };
   try {
@@ -818,7 +798,7 @@ test('recent transaction samples batch parsed actions, preserve signature order,
     );
     assert.equal(refreshed.freshness, 'fresh');
     assert.equal(calls, 6);
-    fetchStub.fetch = async () => {
+    fetchStub.fetch = () => {
       throw new Error('provider unavailable');
     };
     const stale = await loadRecentTransactionSample(
@@ -834,32 +814,34 @@ test('recent transaction samples batch parsed actions, preserve signature order,
   }
 });
 
-test('recent transaction samples remain fresh when Parsed Events is unavailable', async () => {
-  const cache = new Map();
+void test('recent transaction samples remain fresh when Parsed Events is unavailable', async () => {
+  const cache = new Map<string, unknown>();
   const snapshots: SnapshotStore = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key) => cache.get(key) || null,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async (key, value) => cache.set(key, JSON.parse(value)),
+    /** Read retained transaction evidence.
+     * @param key - Requested sample identity.
+     * @returns Stored unknown JSON or null when absent.
+     */
+    get: (key) => Promise.resolve(cache.get(key) ?? null),
+    /** Publish the complete sample even when enrichment fails.
+     * @param key - Requested sample identity.
+     * @param value - Complete serialized sample.
+     * @returns Completion after recording the publication.
+     */
+    put: (key, value) =>
+      Promise.resolve(cache.set(key, JSON.parse(value) as unknown)),
   };
   const originalFetch = fetchStub.fetch;
   const originalWarn = console.warn;
-  fetchStub.fetch = async (_url, options) => {
-    const request = JSON.parse(options.body);
-    if (request.method === 'getSlot')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: 123 }),
-      };
+  fetchStub.fetch = (_url, options) => {
+    const request = JSON.parse(options.body) as {
+      method?: string;
+      transactions?: unknown[];
+    };
+    if (request.method === 'getSlot') return Response.json({ result: 123 });
     if (request.method === 'getBlock')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: { blockTime: 1_760_000_000, signatures: ['sig-a'] },
-        }),
-      };
+      return Response.json({
+        result: { blockTime: 1_760_000_000, signatures: ['sig-a'] },
+      });
     if (Array.isArray(request.transactions)) return { ok: false, status: 403 };
     throw new Error(`Unexpected ${request.method}`);
   };
@@ -878,89 +860,69 @@ test('recent transaction samples remain fresh when Parsed Events is unavailable'
   }
 });
 
-test('Helius dashboard samples combine the 60-second transaction and requested network metrics', async () => {
-  const cache = new Map();
+void test('Helius dashboard samples combine the 60-second transaction and requested network metrics', async () => {
+  const cache = new Map<string, unknown>();
   const snapshots: SnapshotStore = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key) => cache.get(key) || null,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async (key, value) => cache.set(key, JSON.parse(value)),
+    /** Read independently cached dashboard evidence.
+     * @param key - Requested resource identity.
+     * @returns Stored unknown JSON or null when absent.
+     */
+    get: (key) => Promise.resolve(cache.get(key) ?? null),
+    /** Publish a complete dashboard without publishing the recent-transactions resource.
+     * @param key - Requested resource identity.
+     * @param value - Complete serialized dashboard.
+     * @returns Completion after recording the publication.
+     */
+    put: (key, value) =>
+      Promise.resolve(cache.set(key, JSON.parse(value) as unknown)),
   };
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (_url, options) => {
-    const request = JSON.parse(options.body);
+  fetchStub.fetch = (_url, options) => {
+    const request = JSON.parse(options.body) as {
+      method?: string;
+      transactions?: unknown[];
+      params?: Record<string, unknown>[];
+    };
     if (request.method === 'getSlot')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result:
-            request.params?.[0]?.commitment === 'processed'
-              ? 120
-              : request.params?.[0]?.commitment === 'finalized'
-                ? 118
-                : 119,
-        }),
-      };
+      return Response.json({
+        result:
+          request.params?.[0]?.commitment === 'processed'
+            ? 120
+            : request.params?.[0]?.commitment === 'finalized'
+              ? 118
+              : 119,
+      });
     if (request.method === 'getBlockHeight')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: 100 }),
-      };
+      return Response.json({ result: 100 });
     if (request.method === 'getEpochInfo')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: { epoch: 7 } }),
-      };
+      return Response.json({ result: { epoch: 7 } });
     if (request.method === 'getRecentPerformanceSamples')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: [
-            {
-              numTransactions: 200,
-              numNonVoteTransactions: 150,
-              samplePeriodSecs: 2,
-            },
-            {
-              numTransactions: 100,
-              numNonVoteTransactions: 75,
-              samplePeriodSecs: 1,
-            },
-          ],
-        }),
-      };
+      return Response.json({
+        result: [
+          {
+            numTransactions: 200,
+            numNonVoteTransactions: 150,
+            samplePeriodSecs: 2,
+          },
+          {
+            numTransactions: 100,
+            numNonVoteTransactions: 75,
+            samplePeriodSecs: 1,
+          },
+        ],
+      });
     if (request.method === 'getBlocksWithLimit')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: [117] }),
-      };
+      return Response.json({ result: [117] });
     if (request.method === 'getBlock')
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result:
-            request.params?.[1]?.transactionDetails === 'signatures'
-              ? { blockTime: 1_760_000_000, signatures: ['sig-a'] }
-              : {
-                  transactions: [
-                    { meta: { fee: 100 } },
-                    { meta: { fee: 300 } },
-                  ],
-                },
-        }),
-      };
-    if (Array.isArray(request.transactions))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ data: [] }),
-      };
+      return Response.json({
+        result:
+          request.params?.[1]?.transactionDetails === 'signatures'
+            ? { blockTime: 1_760_000_000, signatures: ['sig-a'] }
+            : {
+                transactions: [{ meta: { fee: 100 } }, { meta: { fee: 300 } }],
+              },
+      });
+    if (Array.isArray(request.transactions)) return Response.json({ data: [] });
     throw new Error(`Unexpected ${request.method}`);
   };
   try {
@@ -993,7 +955,7 @@ test('Helius dashboard samples combine the 60-second transaction and requested n
   }
 });
 
-test('DAS wallet mapping preserves atomic balances, caps holdings, and reports partial valuation', () => {
+void test('DAS wallet mapping preserves atomic balances, caps holdings, and reports partial valuation', () => {
   const result = {
     nativeBalance: { lamports: '1000000000' },
     items: Array.from({ length: 41 }, (_, index) => ({
@@ -1029,21 +991,18 @@ test('DAS wallet mapping preserves atomic balances, caps holdings, and reports p
   assert.equal(wallet.valuation.complete, false);
 });
 
-test('v3 wallet returns DAS balances as unpriced when Jupiter enrichment rejects', async () => {
+void test('v3 wallet returns DAS balances as unpriced when Jupiter enrichment rejects', async () => {
   const originalFetch = fetchStub.fetch;
   const originalWarn = console.warn;
-  fetchStub.fetch = async () => ({
-    ok: true,
-    /** Return the controlled JSON payload for this provider-response fixture. */
-    json: async () => ({
+  fetchStub.fetch = () =>
+    Response.json({
       result: {
         nativeBalance: { lamports: '1000000000' },
         items: [
           { id: 'Mint1', token_info: { balance: '2500000', decimals: 6 } },
         ],
       },
-    }),
-  });
+    });
   console.warn = () => {};
   try {
     const wallet = (
@@ -1051,9 +1010,7 @@ test('v3 wallet returns DAS balances as unpriced when Jupiter enrichment rejects
         env({ HELIUS_API_KEY: 'h', JUPITER_API_KEY: 'j' }),
         {},
         SOL_MINT,
-        async () => {
-          throw new Error('Jupiter unavailable');
-        },
+        () => Promise.reject(new Error('Jupiter unavailable')),
       )
     ).wallet;
     assert.deepEqual(record(wallet).balances, [
@@ -1093,19 +1050,19 @@ test('v3 wallet returns DAS balances as unpriced when Jupiter enrichment rejects
   }
 });
 
-test('v3 wallet propagates DAS failures before attempting Jupiter enrichment', async () => {
+void test('v3 wallet propagates DAS failures before attempting Jupiter enrichment', async () => {
   const originalFetch = fetchStub.fetch;
   let jupiterRequested = false;
-  fetchStub.fetch = async () => ({ ok: false, status: 503 });
+  fetchStub.fetch = () => ({ ok: false, status: 503 });
   try {
     await assert.rejects(
       loadV3Wallet(
         env({ HELIUS_API_KEY: 'h', JUPITER_API_KEY: 'j' }),
         {},
         SOL_MINT,
-        async () => {
+        () => {
           jupiterRequested = true;
-          return null;
+          return Promise.resolve(null);
         },
       ),
       /Helius RPC request failed with 503/,
@@ -1116,88 +1073,80 @@ test('v3 wallet propagates DAS failures before attempting Jupiter enrichment', a
   }
 });
 
-test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibility', async () => {
+void test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibility', async () => {
   const originalFetch = fetchStub.fetch;
   const writes: { key: string; value: string }[] = [];
-  const cache = new Map();
+  const cache = new Map<string, unknown>();
   const requests: { value: string; options: FetchStubOptions }[] = [];
-  fetchStub.fetch = async (url, options) => {
+  fetchStub.fetch = (url, options) => {
     const value = String(url);
     requests.push({ value, options });
     if (value.includes('/v1/parsed-events/transaction-history'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          data: Array.from({ length: 25 }, (_, index) => ({
-            signature: `sig${index}`,
-            parserStatus: 'OK',
-            parsed: {
-              blockTime: 1,
-              transactionStatus: 'OK',
-              summary: {
-                type: 'transfer',
-                description: 'Transferred SOL',
-                parsedData: { protocol: 'system' },
-              },
-              nativeTransfers: [
-                {
-                  fromUserAccount: 'from',
-                  toUserAccount: 'to',
-                  amount: 9007199254740993n.toString(),
-                },
-              ],
-              tokenTransfers: [
-                {
-                  mint: SOL_MINT,
-                  fromUserAccount: 'from',
-                  toUserAccount: 'to',
-                  rawTokenAmount: '2500000',
-                  decimals: 6,
-                  tokenStandard: 'Fungible',
-                },
-              ],
+      return Response.json({
+        data: Array.from({ length: 25 }, (_, index) => ({
+          signature: `sig${index}`,
+          parserStatus: 'OK',
+          parsed: {
+            blockTime: 1,
+            transactionStatus: 'OK',
+            summary: {
+              type: 'transfer',
+              description: 'Transferred SOL',
+              parsedData: { protocol: 'system' },
             },
-          })),
-          paginationToken: '433950192:0',
-        }),
-      };
-    if (value.includes('mainnet.helius-rpc.com'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: { nativeBalance: { lamports: '1000000000' }, items: [] },
-        }),
-      };
-    if (value.includes('/tokens/'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => [
-          {
-            id: SOL_MINT,
-            symbol: 'SOL',
-            name: 'Solana',
-            decimals: 9,
-            usdPrice: 100,
-            isVerified: true,
+            nativeTransfers: [
+              {
+                fromUserAccount: 'from',
+                toUserAccount: 'to',
+                amount: 9007199254740993n.toString(),
+              },
+            ],
+            tokenTransfers: [
+              {
+                mint: SOL_MINT,
+                fromUserAccount: 'from',
+                toUserAccount: 'to',
+                rawTokenAmount: '2500000',
+                decimals: 6,
+                tokenStandard: 'Fungible',
+              },
+            ],
           },
-        ],
-      };
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => ({ prices: [[1_760_000_000_000, 150]] }),
-    };
+        })),
+        paginationToken: '433950192:0',
+      });
+    if (value.includes('mainnet.helius-rpc.com'))
+      return Response.json({
+        result: { nativeBalance: { lamports: '1000000000' }, items: [] },
+      });
+    if (value.includes('/tokens/'))
+      return Response.json([
+        {
+          id: SOL_MINT,
+          symbol: 'SOL',
+          name: 'Solana',
+          decimals: 9,
+          usdPrice: 100,
+          isVerified: true,
+        },
+      ]);
+    return Response.json({ prices: [[1_760_000_000_000, 150]] });
   };
   const snapshots: SnapshotStore = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key) => cache.get(key) || null,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async (key, value) => {
+    /** Read the isolated wallet cache.
+     * @param key - Requested resource identity.
+     * @returns Stored unknown JSON or null when absent.
+     */
+    get: (key) => Promise.resolve(cache.get(key) ?? null),
+    /** Capture actual resource publication.
+     * @param key - Requested resource identity.
+     * @param value - Complete serialized payload.
+     * @returns Completion after recording the payload and write.
+     */
+    put: (key, value) => {
       writes.push({ key, value });
-      cache.set(key, JSON.parse(value));
+      cache.set(key, JSON.parse(value) as unknown);
+      return Promise.resolve();
     },
   };
   try {
@@ -1227,8 +1176,17 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
       env({ SNAPSHOTS: snapshots, HELIUS_API_KEY: 'h', JUPITER_API_KEY: 'j' }),
       {},
     );
-    const firstBody = await first.json();
-    const secondBody = await second.json();
+    const firstBody =
+      await responseJson<
+        ResourceEnvelope<
+          Record<string, unknown>,
+          { wallet: { cacheState: string; asOf: string } }
+        >
+      >(first);
+    const secondBody =
+      await responseJson<
+        ResourceEnvelope<unknown, { wallet: { cacheState: string } }>
+      >(second);
     assert.equal(firstBody.data.cacheState, undefined);
     assert.equal(firstBody.meta.wallet.cacheState, 'miss');
     assert.equal(secondBody.meta.wallet.cacheState, 'fresh');
@@ -1239,7 +1197,18 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
       env({ HELIUS_API_KEY: 'h' }),
       {},
     );
-    const transactionBody = await transactions.json();
+    const transactionBody = await responseJson<
+      ResourceEnvelope<{
+        nextCursor: string;
+        events: {
+          summary: string;
+          transfers: {
+            native: { atomicAmount: string }[];
+            tokens: { decimals: number }[];
+          };
+        }[];
+      }>
+    >(transactions);
     const parsedRequest = requests.find((request) =>
       request.value.includes('/v1/parsed-events/transaction-history'),
     );
@@ -1269,10 +1238,10 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
       (request) =>
         request.value.includes('mainnet.helius-rpc.com') &&
         request.options.body &&
-        JSON.parse(request.options.body).method === 'getAssetsByOwner',
+        record(JSON.parse(request.options.body)).method === 'getAssetsByOwner',
     );
     assert.ok(dasRequest);
-    assert.deepEqual(JSON.parse(dasRequest.options.body).params, {
+    assert.deepEqual(record(JSON.parse(dasRequest.options.body)).params, {
       ownerAddress: SOL_MINT,
       page: 1,
       limit: 100,
@@ -1297,7 +1266,7 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
       .at(-1);
     assert.ok(cursorRequest);
     assert.equal(
-      JSON.parse(cursorRequest.options.body).paginationToken,
+      record(JSON.parse(cursorRequest.options.body)).paginationToken,
       '433950192:0',
     );
     const malformed = await worker.fetch(
@@ -1308,20 +1277,25 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
       {},
     );
     assert.equal(malformed.status, 404);
-    assert.equal((await malformed.json()).error.code, 'NOT_FOUND');
+    assert.equal(
+      (await responseJson<ErrorEnvelope>(malformed)).error.code,
+      'NOT_FOUND',
+    );
     const v2 = await worker.fetch(
       new Request('https://api.example/v2/assets'),
       env({ SNAPSHOTS: snapshots }),
       {},
     );
     assert.equal(v2.status, 200);
-    assert.ok(Array.isArray((await v2.json()).data));
+    assert.ok(
+      Array.isArray((await responseJson<ResourceEnvelope<unknown>>(v2)).data),
+    );
   } finally {
     fetchStub.fetch = originalFetch;
   }
 });
 
-test('cache-only mode serves all seeded v3 on-chain and wallet records without provider access', async () => {
+void test('cache-only mode serves all seeded v3 on-chain and wallet records without provider access', async () => {
   const walletAddress = '7Yk4L5M6N7P8Q9R2tB6dF8gH1jK4L5M6N7P8Q9R2tB6d';
   const now = new Date().toISOString();
   const records = new Map([
@@ -1352,14 +1326,17 @@ test('cache-only mode serves all seeded v3 on-chain and wallet records without p
     ],
   ]);
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async () => {
+  fetchStub.fetch = () => {
     throw new Error('cache-only mode must not call a provider');
   };
   const seededEnv = env({
     PROVIDER_MODE: 'cache-only',
     SNAPSHOTS: {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async (key) => records.get(key) || null,
+      /** Read the independently seeded resources without any provider calls.
+       * @param key - Complete seeded resource and pagination identity.
+       * @returns The seeded envelope or null for an unsupported identity.
+       */
+      get: (key) => Promise.resolve(records.get(key) ?? null),
     },
   });
   try {

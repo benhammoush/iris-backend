@@ -7,7 +7,10 @@ import { readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-/** Discover test files recursively and return stable filesystem paths for the test runner. */
+/** Discover test files recursively and return stable filesystem paths for the test runner.
+ * @param directory - Test directory URL to inspect recursively.
+ * @returns Files matching the supported test extensions under that directory.
+ */
 async function discover(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {

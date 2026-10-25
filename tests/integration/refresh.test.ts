@@ -18,95 +18,71 @@ const wallet = {
 };
 const usdc = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-test('arbitrary public wallet lookup uses Helius without numeric raw balances', async () => {
+void test('arbitrary public wallet lookup uses Helius without numeric raw balances', async () => {
   const originalFetch = fetchStub.fetch;
   const requests: string[] = [];
-  fetchStub.fetch = async (url, options) => {
+  fetchStub.fetch = (url, options) => {
     const value = String(url);
     requests.push(value);
     if (value.includes('helius-rpc')) {
-      const method = JSON.parse(options.body).method;
+      const { method } = JSON.parse(options.body) as { method: string };
       if (method === 'getBalance')
-        return {
-          ok: true,
-          /** Return the controlled JSON payload for this provider-response fixture. */
-          json: async () => ({
-            result: { value: 9007199254740993000n.toString() },
-          }),
-        };
+        return Response.json({
+          result: { value: 9007199254740993000n.toString() },
+        });
       if (options.body.includes('TokenzQdYQneH1k9i7gNJYkC7V3Tv1ALb6TrC3CFQeX'))
-        return {
-          ok: true,
-          /** Return the controlled JSON payload for this provider-response fixture. */
-          json: async () => ({ result: { value: [] } }),
-        };
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({
-          result: {
-            value: [
-              {
-                account: {
-                  data: {
-                    parsed: {
-                      info: {
-                        mint: usdc,
-                        tokenAmount: { amount: '2500000', decimals: 6 },
-                      },
+        return Response.json({ result: { value: [] } });
+      return Response.json({
+        result: {
+          value: [
+            {
+              account: {
+                data: {
+                  parsed: {
+                    info: {
+                      mint: usdc,
+                      tokenAmount: { amount: '2500000', decimals: 6 },
                     },
                   },
                 },
               },
-            ],
-          },
-        }),
-      };
+            },
+          ],
+        },
+      });
     }
     if (value.includes('/addresses/'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => [
-          {
-            signature: 'signature',
-            timestamp: 1760000000,
-            slot: 123,
-            type: 'SWAP',
-            source: 'RAYDIUM',
-            accountData: [
-              { account: '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2' },
-            ],
-            tokenTransfers: [
-              {
-                mint: usdc,
-                rawTokenAmount: { tokenAmount: '2500000', decimals: 6 },
-              },
-            ],
-          },
-        ],
-      };
+      return Response.json([
+        {
+          signature: 'signature',
+          timestamp: 1760000000,
+          slot: 123,
+          type: 'SWAP',
+          source: 'RAYDIUM',
+          accountData: [
+            { account: '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2' },
+          ],
+          tokenTransfers: [
+            {
+              mint: usdc,
+              rawTokenAmount: { tokenAmount: '2500000', decimals: 6 },
+            },
+          ],
+        },
+      ]);
     if (value.includes('/tokens/'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => [
-          {
-            address: value.includes(encodeURIComponent(usdc)) ? usdc : SOL_MINT,
-            symbol: value.includes(encodeURIComponent(usdc)) ? 'USDC' : 'SOL',
-            name: 'Token',
-            decimals: 6,
-          },
-        ],
-      };
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => ({
-        [SOL_MINT]: { usdPrice: 150 },
-        [usdc]: { usdPrice: 1 },
-      }),
-    };
+      return Response.json([
+        {
+          address: value.includes(encodeURIComponent(usdc)) ? usdc : SOL_MINT,
+          symbol: value.includes(encodeURIComponent(usdc)) ? 'USDC' : 'SOL',
+          name: 'Token',
+          decimals: 6,
+        },
+      ]);
+    return Response.json({
+      [SOL_MINT]: { usdPrice: 150 },
+      [usdc]: { usdPrice: 1 },
+    });
   };
   try {
     const data = await loadWalletData(
@@ -128,15 +104,21 @@ test('arbitrary public wallet lookup uses Helius without numeric raw balances', 
   }
 });
 
-test('refresh does not publish a new fixture when Helius is not configured', async () => {
+void test('refresh does not publish a new fixture when Helius is not configured', async () => {
   const writes = new Map<string, string>();
   const snapshot = await refreshSnapshot(
     {
       SNAPSHOTS: {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async () => null,
-        /** Observe or simulate the cache write requested by this test. */
-        put: async (key, value) => writes.set(key, value),
+        /** Read the absent cache entry.
+         * @returns Null to exercise explicit fixture fallback.
+         */
+        get: () => Promise.resolve(null),
+        /** Capture any attempted cache write.
+         * @param key - Cache identity requested by the refresh.
+         * @param value - Serialized payload supplied by the refresh.
+         * @returns Completion after retaining the attempted write.
+         */
+        put: (key, value) => Promise.resolve(writes.set(key, value)),
       },
     },
     {},
@@ -147,7 +129,7 @@ test('refresh does not publish a new fixture when Helius is not configured', asy
   assert.equal(writes.size, 0);
 });
 
-test('refresh preserves reviewed swaps when a tracked Helius pool refresh fails', async () => {
+void test('refresh preserves reviewed swaps when a tracked Helius pool refresh fails', async () => {
   const previous = {
     ...FIXTURE_SNAPSHOT,
     createdAt: '2026-10-02T12:00:00.000Z',
@@ -160,47 +142,40 @@ test('refresh preserves reviewed swaps when a tracked Helius pool refresh fails'
     { value: string; options?: { expirationTtl?: number } }
   >();
   const snapshots: SnapshotStore = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key) =>
-      key === 'snapshot:current' ? { key: 'snapshot:previous' } : previous,
-    /** Observe or simulate the cache write requested by this test. */
-    put: async (key, value, options) => writes.set(key, { value, options }),
+    /** Read the preceding complete snapshot through its pointer.
+     * @param key - Requested pointer or immutable payload identity.
+     * @returns The old pointer or its complete fixture payload.
+     */
+    get: (key) =>
+      Promise.resolve(
+        key === 'snapshot:current' ? { key: 'snapshot:previous' } : previous,
+      ),
+    /** Capture the replacement snapshot and pointer writes.
+     * @param key - Requested cache identity.
+     * @param value - Complete serialized payload.
+     * @param options - Optional expiry policy retained for assertions.
+     * @returns Completion after recording the write and policy.
+     */
+    put: (key, value, options) =>
+      Promise.resolve(writes.set(key, { value, options })),
   };
   const originalFetch = fetchStub.fetch;
-  fetchStub.fetch = async (url) => {
+  fetchStub.fetch = (url) => {
     const value = String(url);
     if (value.includes('/addresses/')) throw new Error('Helius unavailable');
-    if (value.includes('helius-rpc'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => ({ result: 123 }),
-      };
+    if (value.includes('helius-rpc')) return Response.json({ result: 123 });
     if (value.includes('/toptraded/'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => [
-          {
-            id: SOL_MINT,
-            symbol: 'SOL',
-            name: 'Solana',
-            decimals: 9,
-            isVerified: true,
-          },
-        ],
-      };
-    if (value.includes('/search?'))
-      return {
-        ok: true,
-        /** Return the controlled JSON payload for this provider-response fixture. */
-        json: async () => [],
-      };
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => [],
-    };
+      return Response.json([
+        {
+          id: SOL_MINT,
+          symbol: 'SOL',
+          name: 'Solana',
+          decimals: 9,
+          isVerified: true,
+        },
+      ]);
+    if (value.includes('/search?')) return Response.json([]);
+    return Response.json([]);
   };
   try {
     const refreshed = await refreshSnapshot(

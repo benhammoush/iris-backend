@@ -36,16 +36,26 @@ ajv.addSchema({
   $id: 'https://watchlist.test/contract',
   components: { schemas: record(contract.components).schemas },
 });
-/** Validate the fixture against the contract exercised by this test. */
+/** Validate the fixture against the contract exercised by this test.
+ * @param name - Declared contract schema name.
+ * @param body - Actual response payload requiring runtime schema validation.
+ */
 function validate(name: string, body: unknown) {
   const check = ajv.compile({
     $ref: `https://watchlist.test/contract#/components/schemas/${name}`,
   });
   assert.ok(check(body), ajv.errorsText(check.errors));
 }
-/** Read current epoch seconds for the test token expiry fields. */
+/** Read current epoch seconds for the test token expiry fields.
+ * @returns Current Unix time in whole seconds.
+ */
 const now = () => Math.floor(Date.now() / 1000);
-/** Create the controlled authentication token used by the test. */
+/** Create the controlled authentication token used by the test.
+ * @param uid - Subject identity to sign.
+ * @param overrides - Controlled claim overrides, including invalid-claim fixtures.
+ * @param kid - Signing-key identifier selected by the fixture.
+ * @returns A signed token using the isolated test key only.
+ */
 async function token(
   uid = 'alice',
   overrides: Record<string, unknown> = {},
@@ -63,12 +73,16 @@ async function token(
     .setProtectedHeader({ alg: 'RS256', kid })
     .sign(key);
 }
-/** Build isolated environment bindings for the exercised request. */
+/** Build isolated environment bindings for the exercised request.
+ * @returns Empty cache bindings and isolated test-only authentication configuration.
+ */
 function env(): Env {
   return {
     SNAPSHOTS: {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async () => null,
+      /** Read an absent cache entry.
+       * @returns Null for every cache identity.
+       */
+      get: () => Promise.resolve(null),
       /** Observe or simulate the cache write requested by this test. */
       put: async () => {},
     },
@@ -76,19 +90,23 @@ function env(): Env {
     FIREBASE_CLIENT_EMAIL: 'test@iris-test-project.iam.gserviceaccount.com',
     FIREBASE_PRIVATE_KEY: privateKey,
     WATCHLIST_RATE_LIMITER: {
-      /** Return the controlled request-budget decision for this test. */
-      limit: async () => ({ success: true }),
+      /** Allow the isolated request budget.
+       * @returns A successful limiter decision.
+       */
+      limit: () => Promise.resolve({ success: true }),
     },
   };
 }
 
-test('Firebase rejects invalid signed claims without an account lookup', async (t) => {
+void test('Firebase rejects invalid signed claims without an account lookup', async (t) => {
   const calls: string[] = [];
-  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
-    calls.push(String(input));
-    return Response.json(
-      { 'test-key': certificate },
-      { headers: { 'cache-control': 'public, max-age=3600' } },
+  t.mock.method(globalThis, 'fetch', (input: string | URL | Request) => {
+    calls.push(input instanceof Request ? input.url : input.toString());
+    return Promise.resolve(
+      Response.json(
+        { 'test-key': certificate },
+        { headers: { 'cache-control': 'public, max-age=3600' } },
+      ),
     );
   });
   const configuration = env();
@@ -135,39 +153,44 @@ test('Firebase rejects invalid signed claims without an account lookup', async (
   );
 });
 
-test('certificate rotation/configuration scope and upstream failures fail closed', async (t) => {
+void test('certificate rotation/configuration scope and upstream failures fail closed', async (t) => {
   let certificateCalls = 0;
   let lookupCalls = 0;
   let phase: 'normal' | 'oversize' | 'redirect' | 'malformed' = 'normal';
-  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
-    const url = new URL(String(input));
-    if (url.hostname === 'www.googleapis.com') {
-      certificateCalls++;
-      if (phase === 'oversize') return new Response('x'.repeat(65537));
-      if (phase === 'redirect')
-        return new Response(null, {
-          status: 302,
-          headers: { location: 'https://evil.test' },
+  t.mock.method(globalThis, 'fetch', (input: string | URL | Request) =>
+    Promise.resolve().then(() => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      if (url.hostname === 'www.googleapis.com') {
+        certificateCalls++;
+        if (phase === 'oversize') return new Response('x'.repeat(65537));
+        if (phase === 'redirect')
+          return new Response(null, {
+            status: 302,
+            headers: { location: 'https://evil.test' },
+          });
+        if (phase === 'malformed') return new Response('{not json');
+        return Response.json(
+          { 'test-key': certificate, rotated: certificate },
+          { headers: { 'cache-control': 'max-age=0' } },
+        );
+      }
+      if (url.hostname === 'oauth2.googleapis.com')
+        return Response.json({
+          access_token: 'test-admin',
+          token_type: 'Bearer',
+          expires_in: 3600,
         });
-      if (phase === 'malformed') return new Response('{not json');
-      return Response.json(
-        { 'test-key': certificate, rotated: certificate },
-        { headers: { 'cache-control': 'max-age=0' } },
-      );
-    }
-    if (url.hostname === 'oauth2.googleapis.com')
+      lookupCalls++;
       return Response.json({
-        access_token: 'test-admin',
-        token_type: 'Bearer',
-        expires_in: 3600,
+        users: [{ localId: 'alice', emailVerified: true, validSince: '0' }],
       });
-    lookupCalls++;
-    return Response.json({
-      users: [{ localId: 'alice', emailVerified: true, validSince: '0' }],
-    });
-  });
+    }),
+  );
   const configuration = env();
-  /** Build the request headers required by the exercised fixture. */
+  /** Build the request headers required by the exercised fixture.
+   * @param signed - Controlled signed token, including invalid-token fixtures.
+   * @returns The minimal authentication request boundary.
+   */
   const headers = (signed: string) => ({
     headers: new Headers({ authorization: `Bearer ${signed}` }),
   });
@@ -204,8 +227,10 @@ test('certificate rotation/configuration scope and upstream failures fail closed
   phase = 'normal';
   const limited = env();
   limited.WATCHLIST_RATE_LIMITER = {
-    /** Return the controlled request-budget decision for this test. */
-    limit: async () => ({ success: false }),
+    /** Deny the isolated request budget.
+     * @returns A failed limiter decision before privileged account lookup.
+     */
+    limit: () => Promise.resolve({ success: false }),
   };
   await assert.rejects(authenticateFirebase(headers(await token()), limited), {
     code: 'RATE_LIMITED',
@@ -217,7 +242,7 @@ test('certificate rotation/configuration scope and upstream failures fail closed
   );
 });
 
-test('workerd private routes enforce identity, real D1 constraints and public isolation', async (t) => {
+void test('workerd private routes enforce identity, real D1 constraints and public isolation', async (t) => {
   const bundled = await build({
     entryPoints: ['src/index.ts'],
     bundle: true,
@@ -253,7 +278,10 @@ test('workerd private routes enforce identity, real D1 constraints and public is
         PROVIDER_MODE: 'cache-only',
         CORS_ORIGINS: 'https://frontend.test',
       },
-      /** Intercept outbound Worker traffic with controlled upstream responses. */
+      /** Intercept outbound Worker traffic with controlled upstream responses.
+       * @param request - Outbound request emitted by the isolated Worker.
+       * @returns Controlled certificate, token-exchange or current-account evidence.
+       */
       outboundService: async (request) => {
         const url = new URL(request.url);
         upstreamCalls.push(url.hostname);
@@ -327,7 +355,13 @@ test('workerd private routes enforce identity, real D1 constraints and public is
     for (const sql of statements) await db.prepare(sql.replace(/;$/, '')).run();
     const alice = await token();
     const bob = await token('bob');
-    /** Invoke the boundary under test with controlled request inputs. */
+    /** Invoke the boundary under test with controlled request inputs.
+     * @param path - Private or public route selected by the assertion.
+     * @param method - HTTP method to exercise.
+     * @param signed - Isolated signed account token.
+     * @param headers - Additional controlled headers overriding fixture defaults.
+     * @returns The actual isolated workerd response.
+     */
     const call = (
       path = '/v3/me/watchlist',
       method = 'GET',
@@ -561,8 +595,10 @@ test('workerd private routes enforce identity, real D1 constraints and public is
         const request = new Request('https://iris.test/v3/me/watchlist');
         assert.equal((await worker.fetch(request, configuration)).status, 503);
         configuration.WATCHLIST_RATE_LIMITER = {
-          /** Return the controlled request-budget decision for this test. */
-          limit: async () => ({ success: false }),
+          /** Deny the fixture request budget.
+           * @returns A failed limiter decision that must stop private-route access.
+           */
+          limit: () => Promise.resolve({ success: false }),
         };
         const denied = await worker.fetch(request, configuration);
         assert.equal(denied.status, 429);
@@ -574,7 +610,7 @@ test('workerd private routes enforce identity, real D1 constraints and public is
   }
 });
 
-test('missing private configuration and rate limits fail closed without breaking public endpoints', async () => {
+void test('missing private configuration and rate limits fail closed without breaking public endpoints', async () => {
   const configuration = env();
   const response = await worker.fetch(
     new Request('https://iris.test/v3/me/watchlist'),

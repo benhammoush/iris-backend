@@ -11,15 +11,27 @@ import type {
 } from '@cloudflare/workers-types';
 
 // JSON/string operations consumed by Iris; a Cloudflare KVNamespace implements this surface.
+/** Cache expiration policy consumed by Iris writers. */
+export type CacheWriteOptions = Pick<KVNamespacePutOptions, 'expirationTtl'>;
+
 /** Minimal cache-store capabilities used by snapshot readers and writers. */
 export interface SnapshotStore {
-  /** Read a cached JSON value; missing entries remain unavailable to the caller. */
+  /** Read a cached JSON value; missing entries remain unavailable to the caller.
+   * @param key - Cache key to read.
+   * @param type - JSON decoding selector.
+   * @returns Unknown stored JSON, or null for a missing entry.
+   */
   get(key: string, type: 'json'): Promise<unknown>;
-  /** Persist the cache entry using the supplied key and optional expiry policy. */
+  /** Persist the cache entry using the supplied key and optional expiry policy.
+   * @param key - Cache identity to write.
+   * @param value - Complete serialized JSON payload.
+   * @param options - Optional expiration policy in seconds.
+   * @returns Completion of the cache write before any dependent pointer is published.
+   */
   put(
     key: string,
     value: string,
-    options?: Pick<KVNamespacePutOptions, 'expirationTtl'>,
+    options?: CacheWriteOptions,
   ): Promise<unknown>;
 }
 

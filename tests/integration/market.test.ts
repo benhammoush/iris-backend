@@ -13,45 +13,49 @@ import {
   refreshMarket,
 } from '../../src/market.ts';
 
-test('market refresh uses Jupiter Tokens V2 fields for the verified ranked catalog', async () => {
+void test('market refresh uses Jupiter Tokens V2 fields for the verified ranked catalog', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url) =>
-    Response.json(
-      String(url).includes('/toptraded/')
-        ? [
-            {
-              id: 'UnverifiedMint1111111111111111111111111111111',
-              symbol: 'RISK',
-              isVerified: false,
-            },
-            {
-              id: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
-              symbol: 'JUP',
-              name: 'Jupiter',
-              decimals: 6,
-              icon: 'https://assets.example/jup.png',
-              isVerified: true,
-              usdPrice: 0.7,
-              mcap: 700000000,
-              circSupply: 1000000000,
-              totalSupply: 1000000000,
-              stats24h: { priceChange: 2.5 },
-            },
-          ]
-        : [
-            {
-              id: SOL_MINT,
-              symbol: 'SOL',
-              name: 'Solana',
-              decimals: 9,
-              isVerified: true,
-              usdPrice: 150,
-              mcap: 80000000000,
-              circSupply: 500000000,
-              totalSupply: 600000000,
-              stats24h: { priceChange: 1.5 },
-            },
-          ],
+  globalThis.fetch = (url) =>
+    Promise.resolve(
+      Response.json(
+        (url instanceof Request ? url.url : url.toString()).includes(
+          '/toptraded/',
+        )
+          ? [
+              {
+                id: 'UnverifiedMint1111111111111111111111111111111',
+                symbol: 'RISK',
+                isVerified: false,
+              },
+              {
+                id: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
+                symbol: 'JUP',
+                name: 'Jupiter',
+                decimals: 6,
+                icon: 'https://assets.example/jup.png',
+                isVerified: true,
+                usdPrice: 0.7,
+                mcap: 700000000,
+                circSupply: 1000000000,
+                totalSupply: 1000000000,
+                stats24h: { priceChange: 2.5 },
+              },
+            ]
+          : [
+              {
+                id: SOL_MINT,
+                symbol: 'SOL',
+                name: 'Solana',
+                decimals: 9,
+                isVerified: true,
+                usdPrice: 150,
+                mcap: 80000000000,
+                circSupply: 500000000,
+                totalSupply: 600000000,
+                stats24h: { priceChange: 1.5 },
+              },
+            ],
+      ),
     );
   try {
     const market = await refreshMarket('jupiter-key');
@@ -75,10 +79,12 @@ test('market refresh uses Jupiter Tokens V2 fields for the verified ranked catal
   }
 });
 
-test('market refresh preserves missing provider values as null', async () => {
+void test('market refresh preserves missing provider values as null', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    Response.json([{ id: SOL_MINT, symbol: 'SOL', isVerified: true }]);
+  globalThis.fetch = () =>
+    Promise.resolve(
+      Response.json([{ id: SOL_MINT, symbol: 'SOL', isVerified: true }]),
+    );
   try {
     const market = await refreshMarket('jupiter-key', [SOL_MINT]);
     assert.ok(market);
@@ -93,15 +99,15 @@ test('market refresh preserves missing provider values as null', async () => {
   }
 });
 
-test('market refresh falls back when no Jupiter key is configured', async () => {
+void test('market refresh falls back when no Jupiter key is configured', async () => {
   assert.equal(await refreshMarket(undefined), null);
 });
 
-test('discovery catalogs use Jupiter Trending and Recent endpoints', async () => {
+void test('discovery catalogs use Jupiter Trending and Recent endpoints', async () => {
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
-  globalThis.fetch = async (url) => {
-    const value = String(url);
+  globalThis.fetch = (url) => {
+    const value = url instanceof Request ? url.url : url.toString();
     requests.push(value);
     const token = value.includes('/toptrending/')
       ? {
@@ -123,7 +129,9 @@ test('discovery catalogs use Jupiter Trending and Recent endpoints', async () =>
             stats24h: { buyVolume: 40, sellVolume: 60 },
           },
         ];
-    return Response.json(Array.isArray(token) ? token : [token]);
+    return Promise.resolve(
+      Response.json(Array.isArray(token) ? token : [token]),
+    );
   };
   try {
     const catalogs = await refreshDiscoveryCatalogs('jupiter-key');
@@ -138,37 +146,42 @@ test('discovery catalogs use Jupiter Trending and Recent endpoints', async () =>
   }
 });
 
-test('Birdeye requests USD Solana candles with the configured interval and preserves valid OHLCV data', async () => {
+void test('Birdeye requests USD Solana candles with the configured interval and preserves valid OHLCV data', async () => {
   const originalFetch = globalThis.fetch;
   let request: { url: string; options?: RequestInit } | undefined;
   const timestamp = Math.floor(Date.now() / 1000);
-  globalThis.fetch = async (url, options) => {
-    request = { url: String(url), options };
-    return Response.json({
-      success: true,
-      data: {
-        items: [
-          {
-            unix_time: timestamp - 60,
-            o: 149,
-            h: 152,
-            l: 148,
-            c: 150,
-            v: 20,
-            v_usd: 3000,
-          },
-          {
-            unix_time: timestamp,
-            o: 150,
-            h: 153,
-            l: 149,
-            c: 151,
-            v: 21,
-            v_usd: 3200,
-          },
-        ],
-      },
-    });
+  globalThis.fetch = (url, options) => {
+    request = {
+      url: url instanceof Request ? url.url : url.toString(),
+      options,
+    };
+    return Promise.resolve(
+      Response.json({
+        success: true,
+        data: {
+          items: [
+            {
+              unix_time: timestamp - 60,
+              o: 149,
+              h: 152,
+              l: 148,
+              c: 150,
+              v: 20,
+              v_usd: 3000,
+            },
+            {
+              unix_time: timestamp,
+              o: 150,
+              h: 153,
+              l: 149,
+              c: 151,
+              v: 21,
+              v_usd: 3200,
+            },
+          ],
+        },
+      }),
+    );
   };
   try {
     const candles = await fetchCandles(
@@ -195,7 +208,7 @@ test('Birdeye requests USD Solana candles with the configured interval and prese
   }
 });
 
-test('Birdeye exposes the complete exact-case supported timeframe allowlist', () => {
+void test('Birdeye exposes the complete exact-case supported timeframe allowlist', () => {
   assert.deepEqual(CANDLE_TIMEFRAMES, [
     '1s',
     '15s',

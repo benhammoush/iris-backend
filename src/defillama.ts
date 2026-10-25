@@ -11,16 +11,26 @@ import {
 import { isRecord } from './record.ts';
 import { providerJson } from './providerRequest.ts';
 import { singleFlight } from './singleFlight.ts';
+import type { CacheWriteOptions } from './env.ts';
 
 /** Cache binding operations needed by the external dashboard resource. */
 export interface DefiLlamaCache {
-  /** Read the JSON cache entry for this dashboard key. */
+  /** Read the JSON cache entry for this dashboard key.
+   * @param key - Dashboard cache identity.
+   * @param type - JSON decoding selector.
+   * @returns Unknown stored JSON or null when absent.
+   */
   get?: (key: string, type: 'json') => Promise<unknown>;
-  /** Persist the cache entry using the supplied key and optional expiry policy. */
+  /** Persist the cache entry using the supplied key and optional expiry policy.
+   * @param key - Dashboard cache identity.
+   * @param value - Complete serialized dashboard envelope.
+   * @param options - Expiration policy in seconds, omitted within the object for retained stale data.
+   * @returns Completion of the cache write.
+   */
   put?: (
     key: string,
     value: string,
-    options: { expirationTtl?: number },
+    options: CacheWriteOptions,
   ) => Promise<unknown>;
 }
 
@@ -35,20 +45,29 @@ export interface CachedDefiLlamaDashboard extends Record<string, unknown> {
 
 const DEFILLAMA = 'https://api.llama.fi';
 
-/** Coerce with Number and return null only for non-finite results; null and empty text coerce to zero. */
+/** Coerce with Number and return null only for non-finite results; null and empty text coerce to zero.
+ * @param value - Unknown metric under the existing numeric-coercion contract.
+ * @returns A finite numeric coercion, or null for non-finite results.
+ */
 function finiteOrNull(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
-/** Normalize the provider timestamp for cache and freshness calculations. */
+/** Normalize the provider timestamp for cache and freshness calculations.
+ * @param value - Unknown observation timestamp.
+ * @returns Parseable timestamp text, or null.
+ */
 function timestamp(value: unknown): string | null {
   return typeof value === 'string' && Number.isFinite(Date.parse(value))
     ? value
     : null;
 }
 
-/** Normalize supported exchange metrics from the upstream dashboard payload. */
+/** Normalize supported exchange metrics from the upstream dashboard payload.
+ * @param payload - Unknown exchange-overview JSON.
+ * @returns Supported exchange records sorted by daily volume and aggregate observed volumes.
+ */
 function dexesFrom(payload: unknown) {
   const items: unknown[] | null =
     isRecord(payload) && Array.isArray(payload.protocols)
@@ -93,7 +112,10 @@ function dexesFrom(payload: unknown) {
   };
 }
 
-/** Normalize supported protocol metrics from the upstream dashboard payload. */
+/** Normalize supported protocol metrics from the upstream dashboard payload.
+ * @param payload - Unknown protocol-list JSON.
+ * @returns Supported Solana protocols sorted by TVL and their returned count.
+ */
 function protocolsFrom(payload: unknown) {
   if (!Array.isArray(payload))
     throw new Error('DefiLlama protocol payload is invalid.');
@@ -130,7 +152,10 @@ function protocolsFrom(payload: unknown) {
   return { total: normalized.length, items: normalized };
 }
 
-/** Check that cached dashboard data has the fields required for safe reuse. */
+/** Check that cached dashboard data has the fields required for safe reuse.
+ * @param dashboard - Unknown stored dashboard envelope; item fields remain unknown.
+ * @returns Whether source, timestamp and collection envelopes are reusable.
+ */
 export function isUsableDefiLlamaDashboard(
   dashboard: unknown,
 ): dashboard is CachedDefiLlamaDashboard {
@@ -145,7 +170,12 @@ export function isUsableDefiLlamaDashboard(
   );
 }
 
-/** Refresh the dashboard and retain usable cached data according to the stale-data policy. */
+/** Refresh the dashboard and retain usable cached data according to the stale-data policy.
+ * @param kv - Optional cache writer.
+ * @param now - Observation timestamp for the new dashboard.
+ * @param retainStale - Whether the cache entry is written without normal expiration.
+ * @returns The fully normalized dashboard after any configured cache write.
+ */
 async function defiLlamaWork(
   kv: DefiLlamaCache | null | undefined,
   now: Date,
@@ -178,7 +208,12 @@ async function defiLlamaWork(
   return dashboard;
 }
 
-/** Coalesce equivalent dashboard refreshes within the same cache binding. */
+/** Coalesce equivalent dashboard refreshes within the same cache binding.
+ * @param kv - Optional cache binding identifying this refresh scope.
+ * @param now - Observation timestamp supplied to the refresh.
+ * @param retainStale - Stale-retention policy included in the sharing key.
+ * @returns The coalesced dashboard refresh without sharing across bindings/policies.
+ */
 export function refreshDefiLlamaDashboard(
   kv?: DefiLlamaCache | null,
   now = new Date(),
@@ -191,7 +226,12 @@ export function refreshDefiLlamaDashboard(
   );
 }
 
-/** Resolve dashboard data with explicit cache freshness and fallback semantics. */
+/** Resolve dashboard data with explicit cache freshness and fallback semantics.
+ * @param kv - Optional JSON dashboard store.
+ * @param now - Current time in milliseconds for age classification.
+ * @param retainStale - Whether old otherwise-valid snapshots remain eligible.
+ * @returns Valid cached data with fresh/stale state, or an explicit unavailable result.
+ */
 export async function loadDefiLlamaDashboard(
   kv?: DefiLlamaCache | null,
   now = Date.now(),

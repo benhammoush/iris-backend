@@ -61,7 +61,9 @@ await publishWorker(env, {
   config: 'wrangler.delivery.json',
   entry: 'dist/index.js',
   configuration: { wrangler: text, origin: env.IRIS_WORKER_ORIGIN },
-  /** Preserve the approved production refresh and separately requested manual dev refresh, once only. */
+  /** Preserve the approved production refresh and separately requested manual dev refresh, once only.
+   * @param fetcher - Bounded transport supplied by the trusted release controller.
+   */
   smoke: async (fetcher) => {
     if (refresh) {
       const response = await fetcher(

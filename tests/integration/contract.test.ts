@@ -30,26 +30,36 @@ ajv.addSchema({
   components: { schemas: record(record(document).components).schemas },
 });
 
-/** Resolve the schema validator for the contract under test. */
+/** Resolve the schema validator for the contract under test.
+ * @param name - Canonical response-envelope schema name.
+ * @returns A runtime validator compiled from the backend-owned OpenAPI contract.
+ */
 function validator(name: string) {
   return ajv.compile({
     $ref: `https://iris.test/contract#/components/schemas/${name}`,
   });
 }
 
-/** Build the controlled response envelope expected by this test. */
+/** Build the controlled response envelope expected by this test.
+ * @param data - Resource payload, including deliberately invalid fixtures.
+ * @returns A correlated envelope for runtime schema assertions.
+ */
 function envelope(data: unknown) {
   return { data, meta: { requestId: 'contract-test' } };
 }
 
-test('canonical fixture and unavailable responses match their declared envelopes', async () => {
+void test('canonical fixture and unavailable responses match their declared envelopes', async () => {
   const env: Env = {
     PROVIDER_MODE: 'cache-only',
     SNAPSHOTS: {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async () => null,
-      /** Observe or simulate the cache write requested by this test. */
-      put: async () => {},
+      /** Read an absent cache entry.
+       * @returns Null to exercise fixture and unavailable responses.
+       */
+      get: () => Promise.resolve(null),
+      /** Accept the isolated cache write.
+       * @returns Completion without external persistence.
+       */
+      put: () => Promise.resolve(),
     },
   };
   const cases = [
@@ -78,7 +88,7 @@ test('canonical fixture and unavailable responses match their declared envelopes
   }
 });
 
-test('generated wallet/event and asset schemas retain atomic strings and nullable data', () => {
+void test('generated wallet/event and asset schemas retain atomic strings and nullable data', () => {
   const asset = mapV3Asset({
     id: SOL_MINT,
     symbol: 'SOL',
@@ -141,7 +151,7 @@ test('generated wallet/event and asset schemas retain atomic strings and nullabl
   );
 });
 
-test('canonical specialized responses do not fall back to an untyped data envelope', () => {
+void test('canonical specialized responses do not fall back to an untyped data envelope', () => {
   for (const name of [
     'NetworkEnvelope',
     'DefiLlamaEnvelope',
@@ -154,7 +164,7 @@ test('canonical specialized responses do not fall back to an untyped data envelo
   }
 });
 
-test('fresh Helius profile, holder, distribution and transaction serializers match the contract', async (t) => {
+void test('fresh Helius profile, holder, distribution and transaction serializers match the contract', async (t) => {
   const account = {
     data: {
       parsed: { info: { owner: 'owner', state: 'initialized', decimals: 9 } },
@@ -163,69 +173,79 @@ test('fresh Helius profile, holder, distribution and transaction serializers mat
   t.mock.method(
     globalThis,
     'fetch',
-    async (_input: string | URL | Request, init?: RequestInit) => {
-      const requestBody: unknown = JSON.parse(String(init?.body));
-      const request = record(requestBody);
-      if (!request.method)
-        return Response.json({
-          data: [
-            {
-              signature: 'signature',
-              parsed: {
-                slot: 10,
-                blockTime: 1760000000,
-                transactionStatus: 'OK',
-                summary: { type: 'transfer' },
-                tokenTransfers: [
-                  {
-                    mint: SOL_MINT,
-                    rawTokenAmount: '9007199254740993123',
-                    decimals: 9,
-                    fromUserAccount: 'from',
-                    toUserAccount: 'to',
-                  },
-                ],
+    (_input: string | URL | Request, init?: RequestInit) =>
+      Promise.resolve().then(() => {
+        assert.equal(typeof init?.body, 'string');
+        const requestBody: unknown = JSON.parse(init?.body as string);
+        const request = record(requestBody);
+        if (!request.method)
+          return Response.json({
+            data: [
+              {
+                signature: 'signature',
+                parsed: {
+                  slot: 10,
+                  blockTime: 1760000000,
+                  transactionStatus: 'OK',
+                  summary: { type: 'transfer' },
+                  tokenTransfers: [
+                    {
+                      mint: SOL_MINT,
+                      rawTokenAmount: '9007199254740993123',
+                      decimals: 9,
+                      fromUserAccount: 'from',
+                      toUserAccount: 'to',
+                    },
+                  ],
+                },
               },
-            },
-          ],
-          paginationToken: null,
-        });
-      const results: Record<string, unknown> = {
-        getAsset: {
-          id: SOL_MINT,
-          token_info: { decimals: 9, supply: '9007199254740993123' },
-        },
-        getTokenSupply: { value: { amount: '9007199254740993123' } },
-        getAccountInfo: { value: account },
-        getTokenAccounts: {
-          total: 1,
-          token_accounts: [
-            {
-              address: 'account',
-              owner: 'owner',
-              amount: '9007199254740993123',
-            },
-          ],
-        },
-        getTokenLargestAccounts: {
-          context: { slot: 10 },
-          value: [
-            { address: 'account', amount: '9007199254740993123', decimals: 9 },
-          ],
-        },
-        getMultipleAccounts: { value: [account] },
-      };
-      assert.equal(typeof request.method, 'string');
-      return Response.json({ result: results[String(request.method)] });
-    },
+            ],
+            paginationToken: null,
+          });
+        const results: Record<string, unknown> = {
+          getAsset: {
+            id: SOL_MINT,
+            token_info: { decimals: 9, supply: '9007199254740993123' },
+          },
+          getTokenSupply: { value: { amount: '9007199254740993123' } },
+          getAccountInfo: { value: account },
+          getTokenAccounts: {
+            total: 1,
+            token_accounts: [
+              {
+                address: 'account',
+                owner: 'owner',
+                amount: '9007199254740993123',
+              },
+            ],
+          },
+          getTokenLargestAccounts: {
+            context: { slot: 10 },
+            value: [
+              {
+                address: 'account',
+                amount: '9007199254740993123',
+                decimals: 9,
+              },
+            ],
+          },
+          getMultipleAccounts: { value: [account] },
+        };
+        assert.equal(typeof request.method, 'string');
+        return Response.json({ result: results[request.method as string] });
+      }),
   );
   const env: Env = {
     HELIUS_API_KEY: 'test-key',
     SNAPSHOTS: {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async () => null,
-      /** Observe or simulate the cache write requested by this test. */
-      put: async () => {},
+      /** Read an absent cache entry.
+       * @returns Null to force supported live serializer paths against controlled transport.
+       */
+      get: () => Promise.resolve(null),
+      /** Accept the isolated profile-cache write.
+       * @returns Completion without external persistence.
+       */
+      put: () => Promise.resolve(),
     },
   };
   for (const [suffix, schema] of [

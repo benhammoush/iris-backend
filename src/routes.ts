@@ -39,36 +39,55 @@ import {
 import { loadHeliusDashboardSample } from './recentTransactions.ts';
 import { loadDefiLlamaDashboard } from './defillama.ts';
 import { singleFlight, providerKey } from './singleFlight.ts';
-import { array, record, isRecord } from './record.ts';
-import type { Env } from './env.ts';
+import { array, record, isRecord, scalarText } from './record.ts';
+import type { Env, CacheWriteOptions } from './env.ts';
 import type { WorkerConfig } from './config.ts';
 
 /** Cache binding operations needed by historical candle resources. */
 interface CandleCache {
-  /** Read the cached candle entry as JSON before resource-specific validation. */
+  /** Read the cached candle entry as JSON before resource-specific validation.
+   * @param key - Complete candle resource and time-window identity.
+   * @param type - JSON decoding selector.
+   * @returns Unknown stored JSON, or null when absent.
+   */
   get: (key: string, type: 'json') => Promise<unknown>;
-  /** Persist the cache entry using the supplied key and optional expiry policy. */
+  /** Persist the cache entry using the supplied key and optional expiry policy.
+   * @param key - Complete candle resource and time-window identity.
+   * @param value - Complete serialized candle envelope.
+   * @param options - Required expiration policy in seconds.
+   * @returns Completion of the cache write.
+   */
   put?: (
     key: string,
     value: string,
-    options: { expirationTtl: number },
+    options: Required<CacheWriteOptions>,
   ) => Promise<unknown>;
 }
 
-/** Validate and normalize a timestamp before using it in the response contract. */
+/** Validate and normalize a timestamp before using it in the response contract.
+ * @param value - Unknown timestamp field.
+ * @returns Parseable timestamp text, or null without coercion.
+ */
 function dateString(value: unknown): string | null {
   return typeof value === 'string' && Number.isFinite(Date.parse(value))
     ? value
     : null;
 }
 
-/** Read the classified error code or use the explicit fallback. */
+/** Read the classified error code or use the explicit fallback.
+ * @param value - Unknown operation failure.
+ * @param fallback - Controlled classification for unrecognized failures.
+ * @returns Its nonempty string code, or the supplied fallback.
+ */
 function failureCode(value: unknown, fallback: string): string {
   const code = record(value).code;
   return typeof code === 'string' && code ? code : fallback;
 }
 
-/** Check historical candle data before serving it from cache. */
+/** Check historical candle data before serving it from cache.
+ * @param history - Unknown stored candle envelope.
+ * @returns Whether its timestamp and candle collection permit reuse.
+ */
 function usableCandles(history: unknown): history is Record<string, unknown> & {
   fetchedAt: string;
   candles: unknown[];
@@ -81,7 +100,15 @@ function usableCandles(history: unknown): history is Record<string, unknown> & {
   );
 }
 
-/** Resolve and cache candle data under the requested provider mode and time window. */
+/** Resolve and cache candle data under the requested provider mode and time window.
+ * @param kv - Optional candle cache binding.
+ * @param mint - Exact requested mint identity.
+ * @param apiKey - Optional server-only Birdeye credential.
+ * @param timeframe - Supported candle interval.
+ * @param endTimestamp - Exclusive earlier-history boundary in Unix seconds, or null for latest.
+ * @param providerMode - Live-read or cache-only policy.
+ * @returns Candle data with fresh/stale/unavailable state and original observation time.
+ */
 async function candlesWork(
   kv: CandleCache | null | undefined,
   mint: string,
@@ -199,7 +226,15 @@ async function candlesWork(
   }
 }
 
-/** Coalesce identical candle requests using the cache binding and complete query identity. */
+/** Coalesce identical candle requests using the cache binding and complete query identity.
+ * @param kv - Optional cache binding identifying the sharing scope.
+ * @param mint - Exact requested mint identity.
+ * @param apiKey - Optional server-only credential included in sharing identity.
+ * @param timeframe - Supported candle interval.
+ * @param endTimestamp - Earlier-history boundary in Unix seconds, or null for latest.
+ * @param providerMode - Live-read or cache-only policy included in sharing identity.
+ * @returns The coalesced candle result without mixing windows or provider configurations.
+ */
 export function candlesForAsset(
   kv: CandleCache | null | undefined,
   mint: string,
@@ -223,7 +258,14 @@ export function candlesForAsset(
   );
 }
 
-/** Adapt the legacy history range to the asset candle contract. */
+/** Adapt the legacy history range to the asset candle contract.
+ * @param kv - Optional candle cache binding.
+ * @param mint - Exact requested mint identity.
+ * @param apiKey - Optional server-only Birdeye credential.
+ * @param range - Supported legacy history range.
+ * @param providerMode - Live-read or cache-only policy.
+ * @returns Range-filtered closing-price points with the candle result's freshness metadata.
+ */
 export async function historyForAsset(
   kv: CandleCache | null | undefined,
   mint: string,
@@ -259,7 +301,11 @@ export async function historyForAsset(
   };
 }
 
-/** Build v3 response metadata while preserving freshness and history availability. */
+/** Build v3 response metadata while preserving freshness and history availability.
+ * @param meta - Snapshot and request-correlation metadata.
+ * @param historyValue - Optional history/candle result with its own observation and state.
+ * @returns Combined provenance and freshness without inventing unavailable history.
+ */
 function v3Meta(meta: Record<string, unknown>, historyValue: unknown = null) {
   const history = record(historyValue);
   return {
@@ -277,7 +323,10 @@ function v3Meta(meta: Record<string, unknown>, historyValue: unknown = null) {
   };
 }
 
-/** Normalize a swap into the v3 response contract. */
+/** Normalize a swap into the v3 response contract.
+ * @param value - Unknown stored swap record.
+ * @returns Supported identity and exact scalar leg quantities with decimal context.
+ */
 function v3Swap(value: unknown) {
   const swap = record(value);
   const input = record(swap.input);
@@ -290,21 +339,28 @@ function v3Swap(value: unknown) {
     input: swap.input
       ? {
           mint: input.mint ?? null,
-          atomicAmount: String(input.rawAmount ?? '0'),
+          atomicAmount: scalarText(input.rawAmount ?? '0', 'invalid'),
           decimals: Number.isInteger(input.decimals) ? input.decimals : null,
         }
       : null,
     output: swap.output
       ? {
           mint: output.mint ?? null,
-          atomicAmount: String(output.rawAmount ?? '0'),
+          atomicAmount: scalarText(output.rawAmount ?? '0', 'invalid'),
           decimals: Number.isInteger(output.decimals) ? output.decimals : null,
         }
       : null,
   };
 }
 
-/** Dispatch the validated public API request to its resource handler. */
+/** Dispatch the validated public API request to its resource handler.
+ * @param request - Incoming public request URL after method/origin guards.
+ * @param env - Selected cache and provider bindings.
+ * @param config - Validated effective provider and cache-only policy settings.
+ * @param id - Request correlation identifier.
+ * @param origin - Optional validated allowed browser origin.
+ * @returns A correlated public response with resource-specific cache and failure semantics.
+ */
 export async function route(
   request: Pick<Request, 'url'>,
   env: Env,
@@ -380,7 +436,11 @@ export async function route(
       (Math.floor(Date.now() / REFRESH_INTERVAL_MS) + 1) * REFRESH_INTERVAL_MS,
     ).toISOString(),
   };
-  /** Build explicit cache lifetimes including the allowed stale-revalidation window. */
+  /** Build explicit cache lifetimes including the allowed stale-revalidation window.
+   * @param maxAge - Fresh browser/shared cache lifetime in seconds.
+   * @param staleWhileRevalidate - Permitted stale-revalidation window in seconds.
+   * @returns Scoped public cache headers retaining origin variance and snapshot state.
+   */
   const cacheHeaders = (maxAge: number, staleWhileRevalidate: number) => ({
     'cache-control': `public, max-age=${maxAge}, s-maxage=${maxAge}, stale-while-revalidate=${staleWhileRevalidate}`,
     vary: 'Origin',

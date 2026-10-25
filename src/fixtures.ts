@@ -7,7 +7,14 @@ import { assetIdentity } from './transforms.ts';
 import { SOL_MINT } from './constants.ts';
 
 export const MARKET_SNAPSHOT_AS_OF = '2025-06-30T00:00:00.000Z';
-/** Build deterministic asset data for the explicit fixture snapshot. */
+/** Build deterministic asset data for the explicit fixture snapshot.
+ * @param symbol - Fixture asset symbol.
+ * @param name - Fixture display name.
+ * @param mint - Canonical fixture mint identity.
+ * @param decimals - Fixture decimal precision.
+ * @param totalSupply - Optional known fixture supply; unavailable market metrics remain null.
+ * @returns Identity-only fixture data, never evidence of live provider availability.
+ */
 function staticAsset(
   symbol: string,
   name: string,

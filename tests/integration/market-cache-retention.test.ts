@@ -33,7 +33,7 @@ const oldDefi = {
   protocols: { total: 1, items: [{ name: 'Retained protocol' }] },
 };
 
-test('only hosted dev enables indefinite market retention in checked-in configuration', () => {
+void test('only hosted dev enables indefinite market retention in checked-in configuration', () => {
   const configuration = readFileSync(
     new URL('../../wrangler.toml', import.meta.url),
     'utf8',
@@ -43,18 +43,22 @@ test('only hosted dev enables indefinite market retention in checked-in configur
   assert.equal(configuration.match(/RETAIN_STALE_MARKET_DATA/g)?.length, 1);
 });
 
-test('dev routes retain old market data and original timestamps without renewing freshness', async () => {
+void test('dev routes retain old market data and original timestamps without renewing freshness', async () => {
   for (const flag of ['true', undefined, 'false', 'TRUE']) {
     const env = testEnv({
       RETAIN_STALE_MARKET_DATA: flag,
       SNAPSHOTS: {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async (key) => {
-          if (key === SNAPSHOT_POINTER_KEY) return { key: 'old-snapshot' };
-          if (key === 'old-snapshot') return oldSnapshot;
-          if (key === DEFILLAMA_DASHBOARD_KEY) return oldDefi;
-          return null;
-        },
+        /** Read the old snapshot or independent market dashboard.
+         * @param key - Requested resource identity.
+         * @returns Unchanged old evidence, never a renewed observation timestamp.
+         */
+        get: (key) =>
+          Promise.resolve().then(() => {
+            if (key === SNAPSHOT_POINTER_KEY) return { key: 'old-snapshot' };
+            if (key === 'old-snapshot') return oldSnapshot;
+            if (key === DEFILLAMA_DASHBOARD_KEY) return oldDefi;
+            return null;
+          }),
       },
     });
     const retained = flag === 'true';
@@ -89,7 +93,7 @@ test('dev routes retain old market data and original timestamps without renewing
   }
 });
 
-test('retention still rejects missing, malformed and future-dated records', async () => {
+void test('retention still rejects missing, malformed and future-dated records', async () => {
   const now = Date.parse(oldDate);
   for (const value of [
     null,
@@ -101,9 +105,12 @@ test('retention still rejects missing, malformed and future-dated records', asyn
     },
   ]) {
     const cache = {
-      /** Read the controlled cache or boundary value used by this assertion. */
-      get: async (key: string) =>
-        key === SNAPSHOT_POINTER_KEY ? { key: 'test' } : value,
+      /** Read a controlled malformed or future-dated snapshot.
+       * @param key - Pointer or snapshot cache identity.
+       * @returns The fixed pointer or invalid snapshot payload.
+       */
+      get: (key: string) =>
+        Promise.resolve(key === SNAPSHOT_POINTER_KEY ? { key: 'test' } : value),
     };
     assert.equal((await resolveSnapshot(cache, now, true)).state, 'fixture');
   }
@@ -120,8 +127,10 @@ test('retention still rejects missing, malformed and future-dated records', asyn
       (
         await loadDefiLlamaDashboard(
           {
-            /** Read the controlled cache or boundary value used by this assertion. */
-            get: async () => value,
+            /** Read a controlled invalid dashboard.
+             * @returns The malformed or future-dated payload under test.
+             */
+            get: () => Promise.resolve(value),
           },
           now,
           true,
@@ -132,20 +141,22 @@ test('retention still rejects missing, malformed and future-dated records', asyn
   }
 });
 
-test('authenticated refresh persists dev market caches without TTL and preserves production expiry', async (t) => {
-  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) => {
-    const path = String(url);
-    if (path.includes('/toptraded/'))
-      return Response.json([
-        { id: SOL_MINT, symbol: 'SOL', name: 'Solana', usdPrice: 150 },
-      ]);
-    if (path.includes('/overview/dexs/'))
-      return Response.json({ protocols: [] });
-    if (path.includes('api.llama.fi') || path.includes('/tokens/v2/'))
-      return Response.json([]);
-    if (path.includes('/addresses/')) return Response.json([]);
-    return Response.json({ result: null });
-  });
+void test('authenticated refresh persists dev market caches without TTL and preserves production expiry', async (t) => {
+  t.mock.method(globalThis, 'fetch', (url: string | URL | Request) =>
+    Promise.resolve().then(() => {
+      const path = url instanceof Request ? url.url : url.toString();
+      if (path.includes('/toptraded/'))
+        return Response.json([
+          { id: SOL_MINT, symbol: 'SOL', name: 'Solana', usdPrice: 150 },
+        ]);
+      if (path.includes('/overview/dexs/'))
+        return Response.json({ protocols: [] });
+      if (path.includes('api.llama.fi') || path.includes('/tokens/v2/'))
+        return Response.json([]);
+      if (path.includes('/addresses/')) return Response.json([]);
+      return Response.json({ result: null });
+    }),
+  );
   for (const flag of ['true', undefined]) {
     const records = new Map<string, unknown>();
     const writes: { key: string; expirationTtl?: number }[] = [];
@@ -155,12 +166,21 @@ test('authenticated refresh persists dev market caches without TTL and preserves
       REFRESH_TOKEN: 'test-token',
       RETAIN_STALE_MARKET_DATA: flag,
       SNAPSHOTS: {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async (key) => records.get(key) ?? null,
-        /** Observe or simulate the cache write requested by this test. */
-        put: async (key, value, options) => {
+        /** Read the isolated in-memory cache.
+         * @param key - Resource identity.
+         * @returns The stored unknown JSON or null when absent.
+         */
+        get: (key) => Promise.resolve(records.get(key) ?? null),
+        /** Capture publication and expiration policy.
+         * @param key - Resource identity being published.
+         * @param value - Complete serialized resource.
+         * @param options - Expiration policy retained for assertions.
+         * @returns Completion after recording the publication and expiration policy.
+         */
+        put: (key, value, options) => {
           records.set(key, JSON.parse(value));
           writes.push({ key, ...options });
+          return Promise.resolve();
         },
       },
     });

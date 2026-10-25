@@ -14,16 +14,27 @@ import {
 
 const now = Date.parse('2026-10-02T12:00:00.000Z');
 
-/** Create an isolated in-memory cache fixture. */
+/** Create an isolated in-memory cache fixture.
+ * @param snapshot - Controlled snapshot payload, including malformed fixtures.
+ * @returns A JSON cache reader with a fixed pointer and the supplied payload.
+ */
 function kv(snapshot: unknown) {
   return {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async (key: string) =>
-      key === 'snapshot:current' ? { key: 'snapshot:v1:test' } : snapshot,
+    /** Read the controlled pointer or snapshot.
+     * @param key - Requested pointer or immutable snapshot identity.
+     * @returns The fixed pointer or supplied unknown snapshot payload.
+     */
+    get: (key: string) =>
+      Promise.resolve(
+        key === 'snapshot:current' ? { key: 'snapshot:v1:test' } : snapshot,
+      ),
   };
 }
 
-/** Build the controlled stored snapshot used by the test. */
+/** Build the controlled stored snapshot used by the test.
+ * @param createdAt - Snapshot timestamp chosen to exercise an exact retention boundary.
+ * @returns A minimal supported snapshot with empty resource collections.
+ */
 function snapshot(createdAt: string) {
   return {
     createdAt,
@@ -34,7 +45,7 @@ function snapshot(createdAt: string) {
   };
 }
 
-test('snapshot resolver distinguishes fresh, stale, and fixture data at exact boundaries', async () => {
+void test('snapshot resolver distinguishes fresh, stale, and fixture data at exact boundaries', async () => {
   const fresh = await resolveSnapshot(
     kv(snapshot(new Date(now - SNAPSHOT_FRESH_AFTER_MS).toISOString())),
     now,
@@ -58,12 +69,14 @@ test('snapshot resolver distinguishes fresh, stale, and fixture data at exact bo
   assert.strictEqual(expired.snapshot, FIXTURE_SNAPSHOT);
 });
 
-test('snapshot resolver rejects malformed pointers and future snapshots', async () => {
+void test('snapshot resolver rejects malformed pointers and future snapshots', async () => {
   for (const pointer of [null, {}, { key: 42 }, { key: '' }]) {
     const resolved = await resolveSnapshot(
       {
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async () => pointer,
+        /** Read one controlled malformed pointer.
+         * @returns The invalid pointer fixture.
+         */
+        get: () => Promise.resolve(pointer),
       },
       now,
     );
@@ -77,7 +90,7 @@ test('snapshot resolver rejects malformed pointers and future snapshots', async 
   );
 });
 
-test('snapshot resolver replaces invalid current data with the bundled fixture object', async () => {
+void test('snapshot resolver replaces invalid current data with the bundled fixture object', async () => {
   const resolved = await resolveSnapshot(
     kv({
       createdAt: 'not-a-date',

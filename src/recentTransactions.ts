@@ -28,7 +28,10 @@ interface Sample extends Record<string, unknown> {
   transactions: unknown[];
 }
 
-/** Validate cached transaction sample structure before allowing reuse. */
+/** Validate cached transaction sample structure before allowing reuse.
+ * @param sample - Unknown stored sample envelope.
+ * @returns Whether timestamp, slot and transaction-collection fields permit reuse.
+ */
 function usableSample(sample: unknown): sample is Sample {
   return (
     isRecord(sample) &&
@@ -39,7 +42,10 @@ function usableSample(sample: unknown): sample is Sample {
   );
 }
 
-/** Validate the dashboard-specific transaction sample before allowing reuse. */
+/** Validate the dashboard-specific transaction sample before allowing reuse.
+ * @param sample - Unknown stored dashboard envelope.
+ * @returns Whether the sample and its independent network sections permit reuse.
+ */
 function usableDashboardSample(sample: unknown): sample is Sample {
   return (
     usableSample(sample) &&
@@ -55,6 +61,9 @@ function usableDashboardSample(sample: unknown): sample is Sample {
  * Partial network refreshes renew the envelope, not the sampled block's lifetime.
  * Legacy envelopes that omit the sample timestamp use their envelope timestamp;
  * explicit null, invalid, future or expired timestamps cannot prove usable data.
+ * @param previous - Unknown prior sample with optional transaction-specific timestamp.
+ * @param now - Current time for the original sample's retention limit.
+ * @returns Eligible prior transactions and their original timestamp, or explicit unavailability.
  */
 function precedingTransactions(previous: unknown, now: Date) {
   const prior = record(previous);
@@ -72,6 +81,9 @@ function precedingTransactions(previous: unknown, now: Date) {
  * Reads one bounded dashboard recovery input for both forced and on-traffic work.
  * This does not suppress a forced provider refresh or renew stored timestamps.
  * KV read errors propagate; malformed envelopes are treated as absent data.
+ * @param env - Selected dashboard JSON-cache binding.
+ * @param now - Current time for envelope and transaction retention checks.
+ * @returns Bounded recovery data and its age without renewing stored timestamps.
  */
 async function precedingDashboard(env: Env, now: Date) {
   const stored = env.SNAPSHOTS?.get
@@ -95,7 +107,10 @@ async function precedingDashboard(env: Env, now: Date) {
   return { cached, age };
 }
 
-/** Extract supported transaction signatures from an RPC block response. */
+/** Extract supported transaction signatures from an RPC block response.
+ * @param value - Unknown RPC block response.
+ * @returns Deduplicated nonempty signature strings from the supported collection shape.
+ */
 function signaturesFromBlock(value: unknown): string[] {
   const block = record(value);
   const signatures = Array.isArray(block?.signatures)
@@ -113,7 +128,10 @@ function signaturesFromBlock(value: unknown): string[] {
   ];
 }
 
-/** Classify a parsed event using supported provider fields. */
+/** Classify a parsed event using supported provider fields.
+ * @param event - Unknown parsed-event response.
+ * @returns Its supported summary type or instruction name, otherwise null.
+ */
 function actionFromParsedEvent(event: unknown): string | null {
   const parsed = record(record(event).parsed);
   const type = record(parsed.summary).type;
@@ -129,7 +147,11 @@ function actionFromParsedEvent(event: unknown): string | null {
     : null;
 }
 
-/** Fetch bounded parsed transaction events from the configured provider. */
+/** Fetch bounded parsed transaction events from the configured provider.
+ * @param signatures - Bounded observed block signatures to enrich.
+ * @param apiKey - Server-only operator provider credential.
+ * @returns Unknown parsed-event records for subsequent field normalization.
+ */
 async function parsedEvents(
   signatures: string[],
   apiKey: string,
@@ -146,11 +168,18 @@ async function parsedEvents(
   return Array.isArray(record(body).data)
     ? array(record(body).data)
     : Array.isArray(body)
-      ? body
+      ? array(body)
       : [];
 }
 
-/** Refresh the recent-transaction sample and persist it only when requested. */
+/** Refresh the recent-transaction sample and persist it only when requested.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective selected provider settings.
+ * @param now - Observation timestamp for the sample.
+ * @param confirmedSlot - Optional already-observed confirmed slot, avoiding a second slot read.
+ * @param persist - Whether to publish the independent recent-transaction cache entry.
+ * @returns A bounded block sample retaining signatures even when parser enrichment fails.
+ */
 async function recentSampleWork(
   env: Env,
   config: WorkerConfig,
@@ -225,7 +254,13 @@ async function recentSampleWork(
   return sample;
 }
 
-/** Refresh the dashboard sample while retaining independently usable previous metrics. */
+/** Refresh the dashboard sample while retaining independently usable previous metrics.
+ * @param env - Selected cache and fallback provider bindings.
+ * @param config - Effective selected provider settings.
+ * @param previous - Optional bounded recovery data; omitted to read it within the shared operation.
+ * @param now - Current time for observation and original-transaction retention checks.
+ * @returns A published sample preserving independent metric and transaction freshness.
+ */
 async function dashboardSampleWork(
   env: Env,
   config: WorkerConfig,
@@ -304,7 +339,14 @@ async function dashboardSampleWork(
   return sample;
 }
 
-/** Coalesce equivalent recent-transaction refreshes within the same binding and provider configuration. */
+/** Coalesce equivalent recent-transaction refreshes within the same binding and provider configuration.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective selected provider settings.
+ * @param now - Observation timestamp supplied to the shared operation.
+ * @param confirmedSlot - Optional confirmed slot included in operation identity.
+ * @param persist - Persistence policy included in operation identity.
+ * @returns The coalesced bounded recent-transaction sample.
+ */
 export function refreshRecentTransactionSample(
   env: Env,
   config: WorkerConfig,
@@ -322,7 +364,13 @@ export function refreshRecentTransactionSample(
   );
 }
 
-/** Coalesce equivalent dashboard refreshes within the same binding and provider configuration. */
+/** Coalesce equivalent dashboard refreshes within the same binding and provider configuration.
+ * @param env - Cache binding identifying the environment scope.
+ * @param config - Effective selected provider settings.
+ * @param previous - Optional bounded recovery input selected by the first shared caller.
+ * @param now - Observation timestamp supplied to the shared operation.
+ * @returns The coalesced dashboard sample with independent freshness semantics.
+ */
 export function refreshHeliusDashboardSample(
   env: Env,
   config: WorkerConfig,
@@ -339,7 +387,14 @@ export function refreshHeliusDashboardSample(
   );
 }
 
-/** Load dashboard data according to freshness, refresh and cache-only options. */
+/** Load dashboard data according to freshness, refresh and cache-only options.
+ * @param env - Selected dashboard cache and fallback provider bindings.
+ * @param config - Effective selected provider settings.
+ * @param now - Current time for freshness and retention classification.
+ * @param refreshIfStale - Whether this caller permits one live refresh of stale data.
+ * @param cacheOnly - Whether live refreshes are prohibited even when requested.
+ * @returns Fresh, eligible stale or explicitly unavailable dashboard data.
+ */
 export async function loadHeliusDashboardSample(
   env: Env,
   config: WorkerConfig,
@@ -377,7 +432,13 @@ export async function loadHeliusDashboardSample(
   };
 }
 
-/** Load recent transactions and refresh stale data only when the caller permits it. */
+/** Load recent transactions and refresh stale data only when the caller permits it.
+ * @param env - Selected sample cache and fallback provider bindings.
+ * @param config - Effective selected provider settings.
+ * @param now - Current time for freshness and retention classification.
+ * @param refreshIfStale - Whether this caller permits a live refresh of stale data.
+ * @returns Fresh, eligible stale or explicitly unavailable transaction-sample data.
+ */
 export async function loadRecentTransactionSample(
   env: Env,
   config: WorkerConfig,

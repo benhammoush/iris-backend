@@ -14,25 +14,29 @@ import { heliusRpc } from '../../src/v3.ts';
 const url = 'https://provider.test/read?api-key=never-print-this';
 const options = { provider: 'Test provider' };
 
-/** Flush queued promise callbacks without introducing real timing delays. */
+/** Flush queued promise callbacks without introducing real timing delays.
+ * @returns Completion after bounded promise-queue draining under the controlled clock.
+ */
 async function drainMicrotasks() {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
 
-test('valid Retry-After seconds and dates are respected when they fit', async (t) => {
+void test('valid Retry-After seconds and dates are respected when they fit', async (t) => {
   const now = Date.parse('2026-10-13T12:00:00Z');
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now });
   t.mock.method(Math, 'random', () => 0);
   for (const retryAfter of ['1', new Date(Date.now() + 1000).toUTCString()]) {
     let calls = 0;
-    const fetcher = t.mock.method(globalThis, 'fetch', async () => {
+    const fetcher = t.mock.method(globalThis, 'fetch', () => {
       calls += 1;
-      return calls === 1
-        ? new Response(null, {
-            status: 429,
-            headers: { 'retry-after': retryAfter },
-          })
-        : Response.json({ ok: true });
+      return Promise.resolve(
+        calls === 1
+          ? new Response(null, {
+              status: 429,
+              headers: { 'retry-after': retryAfter },
+            })
+          : Response.json({ ok: true }),
+      );
     });
     const pending = providerJson(url, {}, options);
     await drainMicrotasks();
@@ -47,7 +51,7 @@ test('valid Retry-After seconds and dates are respected when they fit', async (t
   }
 });
 
-test('both attempts and delay share one deadline', async (t) => {
+void test('both attempts and delay share one deadline', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
   t.mock.method(Math, 'random', () => 0);
   let calls = 0;
@@ -79,7 +83,11 @@ test('both attempts and delay share one deadline', async (t) => {
   assert.equal(calls, 2);
 });
 
-/** Capture the classified provider failure produced by the fixture. */
+/** Capture the classified provider failure produced by the fixture.
+ * @param kind - Expected controlled provider-failure category.
+ * @param status - Expected optional HTTP failure status.
+ * @returns An assertion predicate that also rejects credential-bearing error text.
+ */
 function classified(kind: string, status: number | null = null) {
   return (error: unknown) => {
     assert.ok(error instanceof ProviderRequestError);
@@ -90,23 +98,23 @@ function classified(kind: string, status: number | null = null) {
   };
 }
 
-test('successful JSON preserves atomic strings and nullable values', async (t) => {
+void test('successful JSON preserves atomic strings and nullable values', async (t) => {
   const payload = { amount: '900719925474099312345', price: null };
-  const fetcher = t.mock.method(globalThis, 'fetch', async () =>
-    Response.json(payload),
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json(payload)),
   );
   assert.deepEqual(await providerJson(url, {}, options), payload);
   assert.equal(fetcher.mock.callCount(), 1);
 });
 
 for (const status of [429, 502, 503, 504]) {
-  test(`HTTP ${status} retries once with the same read and releases its body`, async (t) => {
+  void test(`HTTP ${status} retries once with the same read and releases its body`, async (t) => {
     const failed = new Response('Unavailable', { status });
     let calls = 0;
     t.mock.method(
       globalThis,
       'fetch',
-      async (input: string | URL | Request, init?: RequestInit) => {
+      (input: string | URL | Request, init?: RequestInit) => {
         assert.equal(input, url);
         assert.equal(init?.body, '{"method":"getSupply"}');
         assert.equal(init?.method, 'POST');
@@ -115,7 +123,9 @@ for (const status of [429, 502, 503, 504]) {
           'application/json',
         );
         calls += 1;
-        return calls === 1 ? failed : Response.json({ result: 'ok' });
+        return Promise.resolve(
+          calls === 1 ? failed : Response.json({ result: 'ok' }),
+        );
       },
     );
     assert.deepEqual(
@@ -136,30 +146,26 @@ for (const status of [429, 502, 503, 504]) {
   });
 }
 
-test('transport TypeErrors retry once; exhausted network errors are sanitized', async (t) => {
-  const fetcher = t.mock.method(globalThis, 'fetch', async () => {
-    throw new TypeError(`Cannot reach ${url}`);
+void test('transport TypeErrors retry once; exhausted network errors are sanitized', async (t) => {
+  const fetcher = t.mock.method(globalThis, 'fetch', () => {
+    return Promise.reject(new TypeError(`Cannot reach ${url}`));
   });
   await assert.rejects(providerJson(url, {}, options), classified('network'));
   assert.equal(fetcher.mock.callCount(), 2);
 });
 
-test('a second transient HTTP failure stops at two attempts', async (t) => {
-  const fetcher = t.mock.method(
-    globalThis,
-    'fetch',
-    async () => new Response('Unavailable', { status: 503 }),
+void test('a second transient HTTP failure stops at two attempts', async (t) => {
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response('Unavailable', { status: 503 })),
   );
   await assert.rejects(providerJson(url, {}, options), classified('http', 503));
   assert.equal(fetcher.mock.callCount(), 2);
 });
 
-test('permanent HTTP errors, malformed JSON and non-transport failures never retry', async (t) => {
+void test('permanent HTTP errors, malformed JSON and non-transport failures never retry', async (t) => {
   for (const status of [400, 401, 403, 404, 500]) {
-    const fetcher = t.mock.method(
-      globalThis,
-      'fetch',
-      async () => new Response('private provider payload', { status }),
+    const fetcher = t.mock.method(globalThis, 'fetch', () =>
+      Promise.resolve(new Response('private provider payload', { status })),
     );
     await assert.rejects(
       providerJson(url, {}, options),
@@ -168,31 +174,28 @@ test('permanent HTTP errors, malformed JSON and non-transport failures never ret
     assert.equal(fetcher.mock.callCount(), 1);
     fetcher.mock.restore();
   }
-  const malformed = t.mock.method(
-    globalThis,
-    'fetch',
-    async () => new Response('{broken'),
+  const malformed = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response('{broken')),
   );
   await assert.rejects(providerJson(url, {}, options), classified('json'));
   assert.equal(malformed.mock.callCount(), 1);
   malformed.mock.restore();
-  const unexpected = t.mock.method(globalThis, 'fetch', async () => {
-    throw new Error(url);
+  const unexpected = t.mock.method(globalThis, 'fetch', () => {
+    return Promise.reject(new Error(url));
   });
   await assert.rejects(providerJson(url, {}, options), classified('network'));
   assert.equal(unexpected.mock.callCount(), 1);
 });
 
-test('Retry-After seconds and HTTP dates beyond the budget skip retries', async (t) => {
+void test('Retry-After seconds and HTTP dates beyond the budget skip retries', async (t) => {
   for (const value of ['60', new Date(Date.now() + 60_000).toUTCString()]) {
-    const fetcher = t.mock.method(
-      globalThis,
-      'fetch',
-      async () =>
+    const fetcher = t.mock.method(globalThis, 'fetch', () =>
+      Promise.resolve(
         new Response('Rate limited', {
           status: 429,
           headers: { 'retry-after': value },
         }),
+      ),
     );
     await assert.rejects(
       providerJson(url, {}, options),
@@ -203,22 +206,24 @@ test('Retry-After seconds and HTTP dates beyond the budget skip retries', async 
   }
 });
 
-test('invalid Retry-After falls back to bounded jitter', async (t) => {
+void test('invalid Retry-After falls back to bounded jitter', async (t) => {
   let calls = 0;
-  t.mock.method(globalThis, 'fetch', async () => {
+  t.mock.method(globalThis, 'fetch', () => {
     calls += 1;
-    return calls === 1
-      ? new Response('Unavailable', {
-          status: 503,
-          headers: { 'retry-after': 'invalid' },
-        })
-      : Response.json(null);
+    return Promise.resolve(
+      calls === 1
+        ? new Response('Unavailable', {
+            status: 503,
+            headers: { 'retry-after': 'invalid' },
+          })
+        : Response.json(null),
+    );
   });
   assert.equal(await providerJson(url, {}, options), null);
   assert.equal(calls, 2);
 });
 
-test('deadline includes pending fetch and body parsing even when a transport ignores abort', async (t) => {
+void test('deadline includes pending fetch and body parsing even when a transport ignores abort', async (t) => {
   for (const pendingBody of [false, true]) {
     let signal: AbortSignal | null | undefined;
     const fetcher = t.mock.method(
@@ -246,11 +251,11 @@ test('deadline includes pending fetch and body parsing even when a transport ign
   }
 });
 
-test('retry delay cannot extend a nearly exhausted deadline', async (t) => {
-  const fetcher = t.mock.method(
-    globalThis,
-    'fetch',
-    async () => new Response(null, { status: 503 }),
+void test('retry delay cannot extend a nearly exhausted deadline', async (t) => {
+  // The HTTP response precedes the deadline; runner contention must not advance this clock.
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response(null, { status: 503 })),
   );
   await assert.rejects(
     providerJson(url, {}, { ...options, timeoutMs: 20 }),
@@ -259,9 +264,9 @@ test('retry delay cannot extend a nearly exhausted deadline', async (t) => {
   assert.equal(fetcher.mock.callCount(), 1);
 });
 
-test('mutation methods and non-replayable bodies are rejected before fetch', async (t) => {
-  const fetcher = t.mock.method(globalThis, 'fetch', async () =>
-    Response.json({}),
+void test('mutation methods and non-replayable bodies are rejected before fetch', async (t) => {
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json({})),
   );
   for (const init of [
     { method: 'POST' },
@@ -277,9 +282,9 @@ test('mutation methods and non-replayable bodies are rejected before fetch', asy
   assert.equal(fetcher.mock.callCount(), 0);
 });
 
-test('Helius RPC application errors are not retried', async (t) => {
-  const fetcher = t.mock.method(globalThis, 'fetch', async () =>
-    Response.json({ error: { message: 'Invalid request' } }),
+void test('Helius RPC application errors are not retried', async (t) => {
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json({ error: { message: 'Invalid request' } })),
   );
   await assert.rejects(
     heliusRpc('getSupply', [], 'test-key', 20_000),
@@ -288,7 +293,7 @@ test('Helius RPC application errors are not retried', async (t) => {
   assert.equal(fetcher.mock.callCount(), 1);
 });
 
-test('Helius RPC forwards its timeout override', async (t) => {
+void test('Helius RPC forwards its timeout override', async (t) => {
   const fetcher = t.mock.method(
     globalThis,
     'fetch',

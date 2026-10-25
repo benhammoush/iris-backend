@@ -11,7 +11,7 @@ import {
   registeredDexRoutes,
 } from '../../src/dexRegistry.ts';
 
-test('tracked swap registration needs both the source and reviewed account evidence', () => {
+void test('tracked swap registration needs both the source and reviewed account evidence', () => {
   const route = registeredDexRoutes()[0];
   assert.ok(route);
   for (const account of [route.programId, ...route.pools]) {
@@ -46,7 +46,7 @@ test('tracked swap registration needs both the source and reviewed account evide
   }
 });
 
-test('callers cannot modify the registry through the returned pool list', () => {
+void test('callers cannot modify the registry through the returned pool list', () => {
   const route = registeredDexRoutes()[0];
   assert.ok(route);
   route.pools.push('unreviewed-pool');

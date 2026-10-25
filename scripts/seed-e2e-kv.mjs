@@ -30,7 +30,15 @@ const wrangler = join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const walletAddress = '7Yk4L5M6N7P8Q9R2tB6dF8gH1jK4L5M6N7P8Q9R2tB6d';
 const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-/** Build deterministic asset fixture data for the isolated test environment. */
+/** Build deterministic asset fixture data for the isolated test environment.
+ * @param mint - Canonical fixture mint identity.
+ * @param symbol - Fixture asset symbol.
+ * @param name - Fixture display name.
+ * @param decimals - Fixture decimal precision.
+ * @param priceUsd - Controlled USD price.
+ * @param marketCapUsd - Controlled USD market capitalization.
+ * @returns Supported asset fields for the isolated seeded resource contract.
+ */
 function asset(mint, symbol, name, decimals, priceUsd, marketCapUsd) {
   return {
     mint,
@@ -56,7 +64,11 @@ function asset(mint, symbol, name, decimals, priceUsd, marketCapUsd) {
   };
 }
 
-/** Build a deterministic candle fixture with the requested observation time. */
+/** Build a deterministic candle fixture with the requested observation time.
+ * @param timestamp - Controlled observation timestamp text.
+ * @param closeUsd - Controlled USD closing price used to derive consistent OHLC values.
+ * @returns A candle with controlled source volume and USD volume.
+ */
 function candle(timestamp, closeUsd) {
   return {
     timestamp,
@@ -69,7 +81,10 @@ function candle(timestamp, closeUsd) {
   };
 }
 
-/** Build the deterministic records needed by the isolated test fixture. */
+/** Build the deterministic records needed by the isolated test fixture.
+ * @param now - Shared observation timestamp for the seeded resources.
+ * @returns Complete cache records consumed only by the isolated end-to-end environment.
+ */
 function records(now) {
   const sol = asset(SOL_MINT, 'SOL', 'Solana', 9, 150.25, 75_000_000_000);
   const usdc = asset(usdcMint, 'USDC', 'USD Coin', 6, 1, 61_000_000_000);
@@ -170,7 +185,11 @@ function records(now) {
       complete: false,
     },
   };
-  /** Build a deterministic transaction-event fixture. */
+  /** Build a deterministic transaction-event fixture.
+   * @param id - Controlled transaction signature.
+   * @param amount - Exact atomic transfer quantity represented as text.
+   * @returns A supported native transfer event with fixed timestamp and decimal context.
+   */
   const event = (id, amount) => ({
     id,
     timestamp: now,

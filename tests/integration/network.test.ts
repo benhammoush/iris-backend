@@ -11,10 +11,9 @@ import {
   refreshNetworkMetrics,
   summarizePerformance,
   summarizeProduction,
-  type Rpc,
 } from '../../src/network.ts';
 
-test('network summaries use weighted TPS and current-epoch aggregate production', () => {
+void test('network summaries use weighted TPS and current-epoch aggregate production', () => {
   assert.deepEqual(
     summarizePerformance([
       { numTransactions: 100, numNonVoteTransactions: 80, samplePeriodSecs: 2 },
@@ -46,7 +45,7 @@ test('network summaries use weighted TPS and current-epoch aggregate production'
   );
 });
 
-test('failed network groups retain prior values as stale without substituting zero', () => {
+void test('failed network groups retain prior values as stale without substituting zero', () => {
   const rejected = {
     status: 'rejected' as const,
     reason: new Error('unavailable'),
@@ -86,10 +85,14 @@ test('failed network groups retain prior values as stale without substituting ze
   assert.equal(snapshot.fees.state, 'unavailable');
 });
 
-test('network refresh uses the latest actual finalized block for average fees', async () => {
+void test('network refresh uses the latest actual finalized block for average fees', async () => {
   const calls: [string, unknown[]][] = [];
-  /** Record the requested RPC method and return its controlled fixture response. */
-  const rpc: Rpc = async (method, params) => {
+  /** Record a request and select its controlled result.
+   * @param method - Requested RPC method.
+   * @param params - Method parameters retained for assertions.
+   * @returns Controlled provider evidence for this read.
+   */
+  const reply = (method: string, params: unknown[]): unknown => {
     calls.push([method, params]);
     if (method === 'getSlot')
       return record(params[0]).commitment === 'finalized' ? 1000 : 1001;
@@ -121,7 +124,7 @@ test('network refresh uses the latest actual finalized block for average fees', 
     throw new Error(`Unexpected ${method}`);
   };
   const snapshot = await refreshNetworkMetrics(
-    rpc,
+    (method, params) => Promise.resolve(reply(method, params)),
     null,
     new Date('2026-10-06T00:00:00.000Z'),
   );
@@ -142,8 +145,11 @@ test('network refresh uses the latest actual finalized block for average fees', 
   assert.equal(record(snapshot.fees).medianPriorityFeeMicroLamports, 25);
 });
 
-test('supply remains available when inflation data is unavailable', () => {
-  /** Build the fulfilled result wrapper used by the aggregation fixture. */
+void test('supply remains available when inflation data is unavailable', () => {
+  /** Build the fulfilled result wrapper used by the aggregation fixture.
+   * @param value - Controlled provider evidence.
+   * @returns A fulfilled outcome retaining that evidence unchanged.
+   */
   const fulfilled = (value: unknown) => ({
     status: 'fulfilled' as const,
     value,
@@ -177,10 +183,14 @@ test('supply remains available when inflation data is unavailable', () => {
   assert.equal(record(snapshot.economics).circulatingSol, 0.8);
 });
 
-test('network refresh falls back to the finalized slot when the block list is empty', async () => {
+void test('network refresh falls back to the finalized slot when the block list is empty', async () => {
   const calls: [string, unknown[]][] = [];
-  /** Record the requested RPC method and return its controlled fixture response. */
-  const rpc: Rpc = async (method, params) => {
+  /** Record a request and select its controlled result.
+   * @param method - Requested RPC method.
+   * @param params - Method parameters retained for assertions.
+   * @returns Controlled evidence with an empty finalized-block list.
+   */
+  const reply = (method: string, params: unknown[]): unknown => {
     calls.push([method, params]);
     if (method === 'getSlot') return 1000;
     if (method === 'getBlockHeight') return 900;
@@ -206,7 +216,9 @@ test('network refresh falls back to the finalized slot when the block list is em
     if (method === 'getBlock') return { transactions: [] };
     throw new Error(`Unexpected ${method}`);
   };
-  await refreshNetworkMetrics(rpc);
+  await refreshNetworkMetrics((method, params) =>
+    Promise.resolve(reply(method, params)),
+  );
   assert.deepEqual(
     calls.find(([method]) => method === 'getBlock')?.[1]?.slice(0, 1),
     [1000],

@@ -39,15 +39,21 @@ import worker from '../../src/index.ts';
 
 const otherMint = '11111111111111111111111111111111';
 const config = { heliusApiKey: 'test-helius', jupiterApiKey: 'test-jupiter' };
-/** Return the controlled unavailable-market result used by the test. */
-const noMarket = async () => null;
+/** Return the controlled unavailable-market result used by the test.
+ * @returns An unavailable enrichment result without pricing fixture balances.
+ */
+const noMarket = () => Promise.resolve(null);
 
-/** Build the provider response payload for the exercised fixture case. */
+/** Build the provider response payload for the exercised fixture case.
+ * @param url - Controlled provider read URL.
+ * @param options - Serialized request used to select RPC fixture evidence.
+ * @returns Unknown provider JSON for the actual normalization boundary.
+ */
 function payload(url: string, options: FetchStubOptions): unknown {
   if (url.includes('/parsed-events/'))
     return { data: [], paginationToken: null };
   if (url.includes('helius-rpc')) {
-    const method = JSON.parse(options.body).method;
+    const { method } = JSON.parse(options.body) as { method: string };
     if (method === 'getBlock')
       return {
         result: { blockTime: 1_760_000_000, signatures: [], transactions: [] },
@@ -100,24 +106,48 @@ function payload(url: string, options: FetchStubOptions): unknown {
   return [];
 }
 
-test('on-demand loaders share identical work through cache writes, not completed results', async (t) => {
+void test('on-demand loaders share identical work through cache writes, not completed results', async (t) => {
   const operations: Record<string, (env: Env) => Promise<unknown>> = {
-    /** Exercise the on-chain resource through the shared-work test fixture. */
+    /** Exercise the on-chain resource through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The scoped on-chain resource operation.
+     */
     onchain: (env) => loadV3AssetOnchain(env, config, SOL_MINT),
-    /** Exercise the holder page through the shared-work test fixture. */
+    /** Exercise the holder page through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The first scoped holder-page operation.
+     */
     holders: (env) => loadV3AssetHolders(env, config, SOL_MINT, 1),
-    /** Exercise asset distribution through the shared-work test fixture. */
+    /** Exercise asset distribution through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The scoped distribution operation.
+     */
     distribution: (env) => loadV3AssetDistribution(env, config, SOL_MINT),
-    /** Exercise the asset transaction page through the shared-work test fixture. */
+    /** Exercise the asset transaction page through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The initial bounded asset-transaction operation.
+     */
     'asset transactions': (env) =>
       loadV3AssetTransactions(env, config, SOL_MINT, 25, null),
-    /** Exercise the wallet resource through the shared-work test fixture. */
+    /** Exercise the wallet resource through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The unpriced scoped wallet operation.
+     */
     wallet: (env) => loadV3Wallet(env, config, otherMint, noMarket),
-    /** Exercise the wallet event page through the shared-work test fixture. */
+    /** Exercise the wallet event page through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The initial bounded wallet-event operation.
+     */
     'wallet events': (env) => loadV3Events(env, config, otherMint, 25, null),
-    /** Exercise the legacy wallet resource through the shared-work test fixture. */
+    /** Exercise the legacy wallet resource through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The scoped legacy wallet operation.
+     */
     'legacy wallet': (env) => loadWalletData(env, config, otherMint),
-    /** Exercise candle retrieval through the shared-work test fixture. */
+    /** Exercise candle retrieval through the shared-work test fixture.
+     * @param env - Isolated binding scope.
+     * @returns The scoped initial candle operation.
+     */
     candles: (env) => candlesForAsset(env.SNAPSHOTS, SOL_MINT, 'test-birdeye'),
   };
   for (const [name, load] of Object.entries(operations)) {
@@ -128,20 +158,19 @@ test('on-demand loaders share identical work through cache writes, not completed
       let writes = 0;
       const env = testEnv({
         SNAPSHOTS: {
-          /** Observe or simulate the cache write requested by this test. */
-          put: async () => {
+          /** Count actual cache publication.
+           * @returns Completion after incrementing the write count.
+           */
+          put: () => {
             writes++;
+            return Promise.resolve();
           },
         },
       });
       fetchStub.fetch = async (url, options) => {
         calls++;
         await gate.promise;
-        return {
-          ok: true,
-          /** Return the controlled JSON payload for this provider-response fixture. */
-          json: async () => payload(url, options),
-        };
+        return Response.json(payload(url, options));
       };
       try {
         const first = load(env);
@@ -165,17 +194,13 @@ test('on-demand loaders share identical work through cache writes, not completed
   }
 });
 
-test('mint, timeframe, ending page, holder page, limit, cursor and wallet dependency keys do not collide', async () => {
+void test('mint, timeframe, ending page, holder page, limit, cursor and wallet dependency keys do not collide', async () => {
   const original = fetchStub.fetch;
   const gate = deferred<void>();
   const env = testEnv();
   fetchStub.fetch = async (url, options) => {
     await gate.promise;
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => payload(url, options),
-    };
+    return Response.json(payload(url, options));
   };
   try {
     const requests = [
@@ -193,7 +218,7 @@ test('mint, timeframe, ending page, holder page, limit, cursor and wallet depend
       loadV3Events(env, config, otherMint, 25, 'initial'),
       loadV3Events(env, config, otherMint, 50, null),
       loadV3Wallet(env, config, otherMint, noMarket),
-      loadV3Wallet(env, config, otherMint, async () => null),
+      loadV3Wallet(env, config, otherMint, () => Promise.resolve(null)),
     ];
     assert.equal(new Set(requests).size, requests.length);
     gate.resolve();
@@ -204,7 +229,7 @@ test('mint, timeframe, ending page, holder page, limit, cursor and wallet depend
   }
 });
 
-test('binding identity, provider configuration and cache-only mode stay isolated', async () => {
+void test('binding identity, provider configuration and cache-only mode stay isolated', async () => {
   const original = fetchStub.fetch;
   const gate = deferred<void>();
   const env = testEnv();
@@ -212,11 +237,7 @@ test('binding identity, provider configuration and cache-only mode stay isolated
   fetchStub.fetch = async (url, options) => {
     calls++;
     await gate.promise;
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => payload(url, options),
-    };
+    return Response.json(payload(url, options));
   };
   try {
     const first = loadV3AssetOnchain(env, config, SOL_MINT);
@@ -248,7 +269,7 @@ test('binding identity, provider configuration and cache-only mode stay isolated
   }
 });
 
-test('provider and cache-write failures are shared and allow later retries', async () => {
+void test('provider and cache-write failures are shared and allow later retries', async () => {
   const original = fetchStub.fetch;
   const gate = deferred<void>();
   let failProvider = true;
@@ -256,21 +277,20 @@ test('provider and cache-write failures are shared and allow later retries', asy
   let writes = 0;
   const env = testEnv({
     SNAPSHOTS: {
-      /** Observe or simulate the cache write requested by this test. */
-      put: async () => {
-        writes++;
-        if (failWrite) throw new Error('KV failed');
-      },
+      /** Count and optionally reject actual cache publication.
+       * @returns Completion unless the controlled write failure remains enabled.
+       */
+      put: () =>
+        Promise.resolve().then(() => {
+          writes++;
+          if (failWrite) throw new Error('KV failed');
+        }),
     },
   });
   fetchStub.fetch = async (url, options) => {
     await gate.promise;
     if (failProvider) return { ok: false, status: 400 };
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => payload(url, options),
-    };
+    return Response.json(payload(url, options));
   };
   try {
     const first = loadV3AssetOnchain(env, config, SOL_MINT);
@@ -294,7 +314,7 @@ test('provider and cache-write failures are shared and allow later retries', asy
   }
 });
 
-test('snapshot refresh shares the first timestamp and waits for complete data before pointer publication', async () => {
+void test('snapshot refresh shares the first timestamp and waits for complete data before pointer publication', async () => {
   const original = fetchStub.fetch;
   const dataWrite = deferred<void>();
   const writeStarted = deferred<void>();
@@ -302,7 +322,9 @@ test('snapshot refresh shares the first timestamp and waits for complete data be
   let discoveryCalls = 0;
   const env = testEnv({
     SNAPSHOTS: {
-      /** Observe or simulate the cache write requested by this test. */
+      /** Wait for complete data publication before accepting pointer publication.
+       * @param key - Immutable data or pointer key requested by the refresh.
+       */
       put: async (key) => {
         writes.push(key);
         if (key.startsWith(SNAPSHOT_KEY_PREFIX)) {
@@ -312,13 +334,9 @@ test('snapshot refresh shares the first timestamp and waits for complete data be
       },
     },
   });
-  fetchStub.fetch = async (url, options) => {
+  fetchStub.fetch = (url, options) => {
     if (url.includes('/toptraded/')) discoveryCalls++;
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => payload(url, options),
-    };
+    return Response.json(payload(url, options));
   };
   try {
     const firstTime = new Date('2026-10-13T12:00:00Z');
@@ -346,24 +364,24 @@ test('snapshot refresh shares the first timestamp and waits for complete data be
   }
 });
 
-test('failed snapshot data write never advances the pointer and the refresh can retry', async () => {
+void test('failed snapshot data write never advances the pointer and the refresh can retry', async () => {
   const original = fetchStub.fetch;
   const writes: string[] = [];
   let failWrite = true;
   const env = testEnv({
     SNAPSHOTS: {
-      /** Observe or simulate the cache write requested by this test. */
-      put: async (key) => {
-        writes.push(key);
-        if (failWrite) throw new Error('data write failed');
-      },
+      /** Simulate a failed immutable snapshot write before pointer publication.
+       * @param key - Requested data or pointer identity.
+       * @returns Completion unless the controlled write failure is enabled.
+       */
+      put: (key) =>
+        Promise.resolve().then(() => {
+          writes.push(key);
+          if (failWrite) throw new Error('data write failed');
+        }),
     },
   });
-  fetchStub.fetch = async (url, options) => ({
-    ok: true,
-    /** Return the controlled JSON payload for this provider-response fixture. */
-    json: async () => payload(url, options),
-  });
+  fetchStub.fetch = (url, options) => Response.json(payload(url, options));
   try {
     const first = refreshSnapshot(env, config);
     const second = refreshSnapshot(env, config);
@@ -384,14 +402,17 @@ test('failed snapshot data write never advances the pointer and the refresh can 
   }
 });
 
-test('direct and on-traffic dashboard refreshes share work, while bindings and sample options remain separate', async () => {
+void test('direct and on-traffic dashboard refreshes share work, while bindings and sample options remain separate', async () => {
   const original = fetchStub.fetch;
   const gate = deferred<void>();
   const env = testEnv();
   let confirmedCalls = 0;
   fetchStub.fetch = async (url, options) => {
     if (url.includes('helius-rpc') && !url.includes('/parsed-events/')) {
-      const body = JSON.parse(options.body);
+      const body = JSON.parse(options.body) as {
+        method: string;
+        params: Record<string, unknown>[];
+      };
       if (
         body.method === 'getSlot' &&
         body.params[0].commitment === 'confirmed'
@@ -399,11 +420,7 @@ test('direct and on-traffic dashboard refreshes share work, while bindings and s
         confirmedCalls++;
     }
     await gate.promise;
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => payload(url, options),
-    };
+    return Response.json(payload(url, options));
   };
   try {
     const direct = refreshHeliusDashboardSample(env, config);
@@ -432,14 +449,17 @@ test('direct and on-traffic dashboard refreshes share work, while bindings and s
   }
 });
 
-test('overlapping dashboard refreshes preserve the first caller fallback and timestamp on partial failure', async () => {
+void test('overlapping dashboard refreshes preserve the first caller fallback and timestamp on partial failure', async () => {
   const original = fetchStub.fetch;
   const gate = deferred<void>();
   const env = testEnv();
   fetchStub.fetch = async (url, options) => {
     await gate.promise;
     if (url.includes('helius-rpc') && !url.includes('/parsed-events/')) {
-      const body = JSON.parse(options.body);
+      const body = JSON.parse(options.body) as {
+        method: string;
+        params: Record<string, unknown>[];
+      };
       if (
         body.method === 'getEpochInfo' ||
         (body.method === 'getBlock' &&
@@ -448,11 +468,7 @@ test('overlapping dashboard refreshes preserve the first caller fallback and tim
         return { ok: false, status: 400 };
       }
     }
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => payload(url, options),
-    };
+    return Response.json(payload(url, options));
   };
   try {
     const previous = {
@@ -491,27 +507,26 @@ test('overlapping dashboard refreshes preserve the first caller fallback and tim
   }
 });
 
-test('DefiLlama refreshes share reads and publication only in the same binding', async () => {
+void test('DefiLlama refreshes share reads and publication only in the same binding', async () => {
   const original = fetchStub.fetch;
   const gate = deferred<void>();
   let calls = 0;
   let writes = 0;
   const env = testEnv({
     SNAPSHOTS: {
-      /** Observe or simulate the cache write requested by this test. */
-      put: async () => {
+      /** Count actual external-dashboard publication.
+       * @returns Completion after incrementing the write count.
+       */
+      put: () => {
         writes++;
+        return Promise.resolve();
       },
     },
   });
   fetchStub.fetch = async (url) => {
     calls++;
     await gate.promise;
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => (url.includes('/overview/') ? { protocols: [] } : []),
-    };
+    return Response.json(url.includes('/overview/') ? { protocols: [] } : []);
   };
   try {
     const first = refreshDefiLlamaDashboard(env.SNAPSHOTS);
@@ -530,7 +545,7 @@ test('DefiLlama refreshes share reads and publication only in the same binding',
   }
 });
 
-test('concurrent mint-detail responses keep request IDs separate while sharing Jupiter lookup', async () => {
+void test('concurrent mint-detail responses keep request IDs separate while sharing Jupiter lookup', async () => {
   const original = fetchStub.fetch;
   const gate = deferred<void>();
   let calls = 0;
@@ -538,11 +553,7 @@ test('concurrent mint-detail responses keep request IDs separate while sharing J
   fetchStub.fetch = async (url, options) => {
     calls++;
     await gate.promise;
-    return {
-      ok: true,
-      /** Return the controlled JSON payload for this provider-response fixture. */
-      json: async () => payload(url, options),
-    };
+    return Response.json(payload(url, options));
   };
   try {
     const url = `https://api.example/v3/assets/mint/${otherMint}?includeHistory=false`;
@@ -560,7 +571,10 @@ test('concurrent mint-detail responses keep request IDs separate while sharing J
     const [a, b] = await Promise.all([first, second]);
     assert.equal(a.status, 200);
     assert.equal(b.status, 200);
-    const [bodyA, bodyB] = await Promise.all([a.json(), b.json()]);
+    const [bodyA, bodyB] = (await Promise.all([a.json(), b.json()])) as {
+      data: unknown;
+      meta: { requestId: string };
+    }[];
     assert.deepEqual(bodyA.data, bodyB.data);
     assert.equal(bodyA.meta.requestId, 'first');
     assert.equal(bodyB.meta.requestId, 'second');

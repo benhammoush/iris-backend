@@ -10,7 +10,11 @@ export type ProviderFailure = 'http' | 'network' | 'timeout' | 'json';
 
 /** Provider failure retaining only provider identity, category and optional HTTP status. */
 export class ProviderRequestError extends Error {
-  /** Initialize this error or state owner with the supplied context. */
+  /** Retain a controlled provider-failure classification, never raw upstream details.
+   * @param provider - Trusted provider label selected by application code.
+   * @param kind - Supported failure category.
+   * @param status - Optional HTTP failure status.
+   */
   constructor(
     readonly provider: string,
     readonly kind: ProviderFailure,
@@ -27,7 +31,10 @@ export class ProviderRequestError extends Error {
 
 const RETRY_STATUSES = new Set([429, 502, 503, 504]);
 
-/** Combine Retry-After with jitter; the caller rejects delays beyond its remaining deadline. */
+/** Combine Retry-After with jitter; the caller rejects delays beyond its remaining deadline.
+ * @param response - Optional failed response carrying Retry-After.
+ * @returns The greater of jitter and a valid server-requested delay, in milliseconds.
+ */
 function retryDelay(response?: Response): number {
   const jitter = 250 + Math.floor(Math.random() * 251);
   const value = response?.headers?.get('retry-after')?.trim();
@@ -40,11 +47,23 @@ function retryDelay(response?: Response): number {
     : jitter;
 }
 
-/** Only provider reads belong here; POST callers must explicitly identify a read. */
+/** Provider read policy with an overall deadline. */
+interface ProviderReadOptions {
+  provider: string;
+  timeoutMs?: number;
+  readOnlyPost?: boolean;
+}
+
+/** Only provider reads belong here; POST callers must explicitly identify a read.
+ * @param url - Trusted operator-configured provider endpoint.
+ * @param init - Read-only request options; caller cancellation is not accepted here.
+ * @param options - Provider label, overall deadline and explicit read-only POST classification.
+ * @returns Unknown provider JSON after at most one supported retry within the shared deadline.
+ */
 export async function providerJson(
   url: string,
   init: Omit<RequestInit, 'signal'>,
-  options: { provider: string; timeoutMs?: number; readOnlyPost?: boolean },
+  options: ProviderReadOptions,
 ): Promise<unknown> {
   const { provider, timeoutMs = 10_000 } = options;
   const method = (init.method ?? 'GET').toUpperCase();
@@ -69,7 +88,9 @@ export async function providerJson(
       reject(timeoutError);
     }, timeoutMs);
   });
-  /** Attempt the provider read at most twice within the shared overall deadline. */
+  /** Attempt the provider read at most twice within the shared overall deadline.
+   * @returns Unknown response JSON, rejecting controlled transport, HTTP, timeout or parsing failures.
+   */
   async function run(): Promise<unknown> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (controller.signal.aborted || Date.now() >= deadline)

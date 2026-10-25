@@ -13,7 +13,7 @@ const { scripts } = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as { scripts: Record<string, string> };
 
-test('check owns every CI quality stage exactly once and ends in a dry-run build', () => {
+void test('check owns every CI quality stage exactly once and ends in a dry-run build', () => {
   const check = scripts.check.split(' && ');
   assert.deepEqual(check, [
     'npm run lint',

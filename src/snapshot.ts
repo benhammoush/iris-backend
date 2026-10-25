@@ -26,7 +26,7 @@ import {
 } from './market.ts';
 import type { Env } from './env.ts';
 import type { ProviderConfig as WorkerConfig } from './config.ts';
-import { array, record, isRecord } from './record.ts';
+import { array, record, isRecord, scalarText } from './record.ts';
 import { refreshNetworkMetrics } from './network.ts';
 import { providerJson } from './providerRequest.ts';
 import {
@@ -70,7 +70,10 @@ interface WalletIdentity {
   description?: string;
 }
 
-/** Validate the fields required to reuse an asset from a stored snapshot. */
+/** Validate the fields required to reuse an asset from a stored snapshot.
+ * @param asset - Unknown asset loaded from snapshot storage.
+ * @returns Whether its identity and history fields satisfy the serving contract.
+ */
 function isSnapshotAsset(asset: unknown): asset is SnapshotAsset {
   return (
     isRecord(asset) &&
@@ -83,7 +86,13 @@ function isSnapshotAsset(asset: unknown): asset is SnapshotAsset {
   );
 }
 
-/** Call the configured Solana RPC provider with a bounded request deadline. */
+/** Call the configured Solana RPC provider with a bounded request deadline.
+ * @param method - Read-only RPC method selected by trusted code.
+ * @param params - Method-specific request parameters.
+ * @param apiKey - Server-only operator RPC credential.
+ * @param timeoutMs - Maximum request duration in milliseconds.
+ * @returns Unknown RPC result for subsequent domain normalization.
+ */
 async function heliusRpc(
   method: string,
   params: unknown[],
@@ -103,12 +112,16 @@ async function heliusRpc(
   );
   if (payload.error)
     throw new Error(
-      `Helius RPC error: ${record(payload.error).message || 'unknown'}`,
+      `Helius RPC error: ${scalarText(record(payload.error).message, 'unknown') || 'unknown'}`,
     );
   return payload.result;
 }
 
-/** Fetch enhanced provider data through the bounded request boundary. */
+/** Fetch enhanced provider data through the bounded request boundary.
+ * @param path - Trusted enhanced-provider resource path.
+ * @param apiKey - Server-only operator provider credential.
+ * @returns Unknown provider JSON for subsequent domain normalization.
+ */
 async function heliusEnhanced(path: string, apiKey: string): Promise<unknown> {
   return providerJson(
     `${HELIUS_ENHANCED}${path}${path.includes('?') ? '&' : '?'}api-key=${encodeURIComponent(apiKey)}`,
@@ -117,7 +130,10 @@ async function heliusEnhanced(path: string, apiKey: string): Promise<unknown> {
   );
 }
 
-/** Validate snapshot structure before exposing cached data to callers. */
+/** Validate snapshot structure before exposing cached data to callers.
+ * @param snapshot - Unknown stored snapshot payload.
+ * @returns Whether its timestamps and resource fields satisfy the serving contract.
+ */
 export function isUsableSnapshot(snapshot: unknown): snapshot is Snapshot {
   if (
     !isRecord(snapshot) ||
@@ -137,10 +153,19 @@ export function isUsableSnapshot(snapshot: unknown): snapshot is Snapshot {
   );
 }
 
-/** Resolve the published snapshot pointer with explicit fresh, stale and fixture fallback states. */
+/** Resolve the published snapshot pointer with explicit fresh, stale and fixture fallback states.
+ * @param kv - Optional JSON snapshot store; absent storage selects explicit fixtures.
+ * @param now - Current time in milliseconds for age classification.
+ * @param retainStale - Whether usable snapshots beyond the normal stale limit remain eligible.
+ * @returns The selected snapshot and its explicit fixture/fresh/stale classification.
+ */
 export async function resolveSnapshot(
   kv?: {
-    /** Read the published pointer or snapshot payload as JSON. */
+    /** Read the published pointer or snapshot payload as JSON.
+     * @param key - Pointer or immutable snapshot key.
+     * @param type - JSON decoding selector.
+     * @returns Unknown stored JSON, or null when missing.
+     */
     get: (key: string, type: 'json') => Promise<unknown>;
   } | null,
   now = Date.now(),
@@ -162,7 +187,10 @@ export async function resolveSnapshot(
   };
 }
 
-/** Normalize one provider token-balance change without losing atomic quantity precision. */
+/** Normalize one provider token-balance change without losing atomic quantity precision.
+ * @param change - Provider record whose individual fields remain unknown.
+ * @returns The supported token change with exact scalar quantity text.
+ */
 function normalizeTokenChange(change: Record<string, unknown>) {
   const rawAmount =
     record(change.rawTokenAmount).tokenAmount ??
@@ -173,7 +201,7 @@ function normalizeTokenChange(change: Record<string, unknown>) {
   return {
     mint: change.mint,
     assetId: change.mint,
-    rawAmount: String(rawAmount),
+    rawAmount: scalarText(rawAmount, 'invalid'),
     decimals: record(change.rawTokenAmount).decimals ?? change.decimals ?? null,
     userAccount:
       change.userAccount ??
@@ -183,7 +211,10 @@ function normalizeTokenChange(change: Record<string, unknown>) {
   };
 }
 
-/** Normalize provider transaction fields into the public transaction contract. */
+/** Normalize provider transaction fields into the public transaction contract.
+ * @param transaction - Object-shaped provider transaction with unknown field values.
+ * @returns Supported identity, timing and transfer fields without quantity rounding.
+ */
 function normalizeTransaction(transaction: Record<string, unknown>) {
   return {
     id: transaction.signature,
@@ -200,7 +231,7 @@ function normalizeTransaction(transaction: Record<string, unknown>) {
       .filter(isRecord)
       .map((transfer) => ({
         ...transfer,
-        amount: String(transfer.amount ?? '0'),
+        amount: scalarText(transfer.amount ?? '0', 'invalid'),
       })),
     tokenTransfers: array(transaction.tokenTransfers)
       .filter(isRecord)
@@ -208,7 +239,11 @@ function normalizeTransaction(transaction: Record<string, unknown>) {
   };
 }
 
-/** Normalize a supported swap while retaining its optional wallet association. */
+/** Normalize a supported swap while retaining its optional wallet association.
+ * @param wallet - Optional wallet association, absent for globally tracked pools.
+ * @param transaction - Object-shaped decoded provider transaction.
+ * @returns Normalized transaction and swap legs without inventing pricing or side.
+ */
 function normalizeSwap(
   wallet: string | null,
   transaction: Record<string, unknown>,
@@ -227,7 +262,11 @@ function normalizeSwap(
   };
 }
 
-/** Fetch bounded balances and transaction evidence for one wallet. */
+/** Fetch bounded balances and transaction evidence for one wallet.
+ * @param wallet - Wallet identity whose balance and bounded activity are requested.
+ * @param apiKey - Server-only operator provider credential.
+ * @returns Exact grouped balances and object-shaped transaction evidence.
+ */
 async function fetchWalletSource(wallet: WalletIdentity, apiKey: string) {
   const [balance, classicAccounts, token2022Accounts, transactions] =
     await Promise.all([
@@ -273,7 +312,7 @@ async function fetchWalletSource(wallet: WalletIdentity, apiKey: string) {
       decimals:
         typeof tokenAmount.decimals === 'number' ? tokenAmount.decimals : 0,
     };
-    current.amounts.push(String(tokenAmount.amount ?? '0'));
+    current.amounts.push(scalarText(tokenAmount.amount ?? '0', 'invalid'));
     grouped.set(info.mint, current);
   }
   const tokenBalances = [...grouped.entries()].flatMap(([mint, value]) => {
@@ -283,13 +322,16 @@ async function fetchWalletSource(wallet: WalletIdentity, apiKey: string) {
       : [{ mint, rawAmount, decimals: value.decimals }];
   });
   return {
-    nativeRawAmount: String(record(balance).value ?? '0'),
+    nativeRawAmount: scalarText(record(balance).value ?? '0', 'invalid'),
     tokenBalances,
     transactions: array(transactions).filter(isRecord),
   };
 }
 
-/** Refresh registered pools and reject partial refreshes rather than publish an incomplete success. */
+/** Refresh registered pools and reject partial refreshes rather than publish an incomplete success.
+ * @param apiKey - Server-only operator provider credential.
+ * @returns Deduplicated supported swaps only when every tracked pool read succeeds.
+ */
 async function fetchTrackedPoolSwaps(apiKey: string) {
   const routes = registeredDexRoutes();
   const results = await Promise.allSettled(
@@ -323,7 +365,11 @@ async function fetchTrackedPoolSwaps(apiKey: string) {
   );
 }
 
-/** Build asset identity with unavailable metrics represented as null, not fabricated zero values. */
+/** Build asset identity with unavailable metrics represented as null, not fabricated zero values.
+ * @param mint - Solana mint identity.
+ * @param decimals - Decimal context available from the token account.
+ * @returns Existing fixture metadata or identity-only metadata with unavailable metrics.
+ */
 function fallbackAsset(mint: string, decimals = 0) {
   const existing = MARKET_SNAPSHOT.assets.find((asset) => asset.mint === mint);
   return (
@@ -355,7 +401,12 @@ function fallbackAsset(mint: string, decimals = 0) {
   );
 }
 
-/** Combine exact balances with available prices; keep the total unknown if any holding cannot be valued. */
+/** Combine exact balances with available prices; keep the total unknown if any holding cannot be valued.
+ * @param wallet - Wallet display identity.
+ * @param source - Exact balances and activity, or null when unavailable.
+ * @param assets - Available market or identity-only asset metadata.
+ * @returns Holdings, activity and a total only when every holding can be valued.
+ */
 function buildWalletData(
   wallet: WalletIdentity,
   source: Awaited<ReturnType<typeof fetchWalletSource>> | null,
@@ -423,7 +474,12 @@ function buildWalletData(
   };
 }
 
-/** Resolve wallet balances and bounded market metadata using the effective provider configuration. */
+/** Resolve wallet balances and bounded market metadata using the effective provider configuration.
+ * @param env - Binding-scoped provider configuration.
+ * @param config - Effective selected provider settings.
+ * @param address - Wallet identity to inspect.
+ * @returns Exact balances enriched with available market metadata.
+ */
 async function walletDataWork(env: Env, config: WorkerConfig, address: string) {
   const apiKey = config.heliusApiKey || env.HELIUS_API_KEY;
   if (!apiKey) {
@@ -459,7 +515,12 @@ async function walletDataWork(env: Env, config: WorkerConfig, address: string) {
   };
 }
 
-/** Build a complete snapshot before publishing its cache pointer; retain usable previous data on supported failures. */
+/** Build a complete snapshot before publishing its cache pointer; retain usable previous data on supported failures.
+ * @param env - Snapshot storage and provider bindings.
+ * @param config - Effective selected provider settings.
+ * @param now - Timestamp used for the snapshot and immutable storage key.
+ * @returns A fully published snapshot or an explicitly eligible previous/fixture snapshot.
+ */
 async function snapshotWork(env: Env, config: WorkerConfig, now = new Date()) {
   const apiKey = config.heliusApiKey || env.HELIUS_API_KEY;
   const retainStale = env.RETAIN_STALE_MARKET_DATA === 'true';
@@ -498,8 +559,8 @@ async function snapshotWork(env: Env, config: WorkerConfig, now = new Date()) {
   const wallets = {};
   const swaps = trackedPoolResult
     .sort((left, right) =>
-      String(record(right).timestamp ?? '').localeCompare(
-        String(record(left).timestamp ?? ''),
+      scalarText(record(right).timestamp, '').localeCompare(
+        scalarText(record(left).timestamp, ''),
       ),
     )
     .slice(0, MAX_SWAPS);
@@ -545,7 +606,12 @@ async function snapshotWork(env: Env, config: WorkerConfig, now = new Date()) {
   return snapshot;
 }
 
-/** Coalesce wallet reads only within the same binding, provider configuration and address. */
+/** Coalesce wallet reads only within the same binding, provider configuration and address.
+ * @param env - Snapshot and provider bindings identifying the request scope.
+ * @param config - Effective selected provider settings.
+ * @param address - Wallet identity to inspect.
+ * @returns The coalesced wallet lookup without sharing across identities/configurations.
+ */
 export function loadWalletData(
   env: Env,
   config: WorkerConfig,
@@ -558,7 +624,12 @@ export function loadWalletData(
   );
 }
 
-/** Coalesce snapshot refreshes using binding, provider and stale-retention policy identity. */
+/** Coalesce snapshot refreshes using binding, provider and stale-retention policy identity.
+ * @param env - Snapshot/provider bindings and stale-retention policy.
+ * @param config - Effective selected provider settings.
+ * @param now - Snapshot timestamp supplied to the refresh.
+ * @returns The coalesced complete-before-pointer refresh result.
+ */
 export function refreshSnapshot(
   env: Env,
   config: WorkerConfig,

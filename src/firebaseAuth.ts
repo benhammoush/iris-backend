@@ -9,20 +9,26 @@ import {
   importX509,
   jwtVerify,
   SignJWT,
+  type JWTPayload,
 } from 'jose';
 import type { Env } from './env.ts';
 import { record } from './record.ts';
 import { PrivateError } from './privateError.ts';
 import { singleFlight } from './singleFlight.ts';
 import { privateRateLimit } from './privateRateLimit.ts';
+import type { HeaderRequest } from './http.ts';
 
 const CERTS =
   'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const TOKEN = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/identitytoolkit';
-/** Represent unavailable data or configuration without treating it as an empty successful result. */
+/** Represent unavailable data or configuration without treating it as an empty successful result.
+ * @returns The fixed unavailable-authentication error.
+ */
 const unavailable = () => new PrivateError('AUTH_UNAVAILABLE', 503);
-/** Construct the fixed error for an invalid boundary value. */
+/** Construct the fixed error for an invalid boundary value.
+ * @returns The fixed invalid-authentication error.
+ */
 const invalid = () => new PrivateError('AUTH_INVALID', 401);
 
 /** Authentication material scoped to one binding object and effective Firebase configuration. */
@@ -36,7 +42,10 @@ interface AuthCache {
 }
 const caches = new WeakMap<Env, AuthCache>();
 
-/** Reuse authentication state only for the same binding object and unchanged Firebase configuration. */
+/** Reuse authentication state only for the same binding object and unchanged Firebase configuration.
+ * @param env - Binding object and effective Firebase configuration identifying this cache.
+ * @returns Its configuration-scoped authentication cache.
+ */
 function cacheFor(env: Env): AuthCache {
   const configuration = [
     env.FIREBASE_PROJECT_ID ?? '',
@@ -51,7 +60,11 @@ function cacheFor(env: Env): AuthCache {
   return cache;
 }
 
-/** Fixed upstream endpoints, bounded bodies/deadlines, and no raw errors in logs. */
+/** Fixed upstream endpoints, bounded bodies/deadlines, and no raw errors in logs.
+ * @param url - Trusted authentication endpoint selected by gateway code.
+ * @param init - Request method, headers and optional bounded payload.
+ * @returns The successful response and object-narrowed JSON within the body limit.
+ */
 async function boundedJson(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -82,11 +95,15 @@ async function boundedJson(url: string, init?: RequestInit) {
   }
   return {
     response,
-    data: record(JSON.parse(new TextDecoder().decode(bytes))),
+    data: record(JSON.parse(new TextDecoder().decode(bytes)) as unknown),
   };
 }
 
-/** Exchange a signed service-account assertion and cache the token with an expiry safety margin. */
+/** Exchange a signed service-account assertion and cache the token with an expiry safety margin.
+ * @param env - Server-only Firebase service-account configuration.
+ * @param cache - Authentication cache scoped to that binding and configuration.
+ * @returns A cached or newly exchanged access token with an expiry safety margin.
+ */
 async function accessTokenWork(env: Env, cache: AuthCache): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   if (cache.accessToken && cache.tokenUntil > now) return cache.accessToken;
@@ -122,16 +139,24 @@ async function accessTokenWork(env: Env, cache: AuthCache): Promise<string> {
   return cache.accessToken;
 }
 
-/** Coalesce concurrent service-account token refreshes within this authentication cache. */
+/** Coalesce concurrent service-account token refreshes within this authentication cache.
+ * @param env - Server-only Firebase service-account configuration.
+ * @param cache - Authentication cache identifying this refresh scope.
+ * @returns Its coalesced service-account access token.
+ */
 function accessToken(env: Env, cache: AuthCache) {
   return singleFlight(cache, ['firebase-oauth'], () =>
     accessTokenWork(env, cache),
   );
 }
 
-/** Verify the Firebase bearer token and return its subject; reject invalid or unavailable authentication. */
+/** Verify the Firebase bearer token and return its subject; reject invalid or unavailable authentication.
+ * @param request - Request carrying the Firebase bearer credential.
+ * @param env - Bindings and Firebase configuration for verification and account lookup.
+ * @returns The verified subject only after account, revocation and email checks succeed.
+ */
 export async function authenticateFirebase(
-  request: { headers: Pick<Headers, 'get'> },
+  request: HeaderRequest,
   env: Env,
 ): Promise<string> {
   const authorization = request.headers.get('authorization');
@@ -196,7 +221,7 @@ export async function authenticateFirebase(
   } catch {
     throw unavailable();
   }
-  let payload;
+  let payload: JWTPayload;
   try {
     ({ payload } = await jwtVerify(token, key, {
       algorithms: ['RS256'],

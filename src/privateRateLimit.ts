@@ -6,7 +6,10 @@
 import type { Env } from './env.ts';
 import { PrivateError } from './privateError.ts';
 
-/** Approximate per-location protection; never a strict global quota. */
+/** Approximate per-location protection; never a strict global quota.
+ * @param env - Selected private rate-limiter binding.
+ * @param key - Scoped request identity, hashed before passing to the limiter.
+ */
 export async function privateRateLimit(env: Env, key: string) {
   if (!env.WATCHLIST_RATE_LIMITER)
     throw new PrivateError('WATCHLIST_UNAVAILABLE', 503);

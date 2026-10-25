@@ -8,11 +8,13 @@ import assert from 'node:assert/strict';
 import { singleFlight } from '../../src/singleFlight.ts';
 import { deferred } from '../support/deferred.ts';
 
-test('identical pending work is shared, but completed results are not cached', async () => {
+void test('identical pending work is shared, but completed results are not cached', async () => {
   const scope = {};
   const gate = deferred<number>();
   let calls = 0;
-  /** Execute the controlled shared-work fixture and expose its invocation to the assertion. */
+  /** Execute the controlled shared-work fixture and expose its invocation to the assertion.
+   * @returns The pending fixture promise after counting the execution.
+   */
   const work = () => {
     calls++;
     return gate.promise;
@@ -28,10 +30,12 @@ test('identical pending work is shared, but completed results are not cached', a
   assert.equal(calls, 2);
 });
 
-test('scopes, typed keys, cursor delimiters and function identities stay separate', async () => {
+void test('scopes, typed keys, cursor delimiters and function identities stay separate', async () => {
   const scope = {};
   const gate = deferred<void>();
-  /** Execute the controlled shared-work fixture and expose its invocation to the assertion. */
+  /** Execute the controlled shared-work fixture and expose its invocation to the assertion.
+   * @returns The same pending gate promise for key-isolation assertions.
+   */
   const work = () => gate.promise;
   const first = singleFlight(scope, ['operation', null], work);
   const variants = [
@@ -50,7 +54,7 @@ test('scopes, typed keys, cursor delimiters and function identities stay separat
   await Promise.all([first, ...variants]);
 });
 
-test('asynchronous rejection and synchronous throw clear pending work for retry', async () => {
+void test('asynchronous rejection and synchronous throw clear pending work for retry', async () => {
   const scope = {};
   const failure = new Error('failed');
   const gate = deferred<number>();
@@ -68,13 +72,18 @@ test('asynchronous rejection and synchronous throw clear pending work for retry'
     }),
     /failed/,
   );
-  assert.equal(await singleFlight(scope, ['operation'], async () => 7), 7);
+  assert.equal(
+    await singleFlight(scope, ['operation'], () => Promise.resolve(7)),
+    7,
+  );
 });
 
-test('unscoped work is not shared', async () => {
+void test('unscoped work is not shared', async () => {
   let calls = 0;
-  /** Execute the controlled shared-work fixture and expose its invocation to the assertion. */
-  const work = async () => ++calls;
+  /** Execute the controlled shared-work fixture and expose its invocation to the assertion.
+   * @returns A resolved promise containing this invocation's sequence number.
+   */
+  const work = () => Promise.resolve(++calls);
   assert.deepEqual(
     await Promise.all([
       singleFlight(null, ['operation'], work),

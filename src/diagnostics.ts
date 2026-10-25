@@ -72,7 +72,10 @@ interface Diagnostic {
   cause?: unknown;
 }
 
-/** Normalize a correlation identifier before including it in diagnostics. */
+/** Normalize a correlation identifier before including it in diagnostics.
+ * @param value - Optional request or operation correlation text.
+ * @returns Only a supported UUID/cf-ray identifier, otherwise null.
+ */
 function correlation(value?: string) {
   return value &&
     /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16}(?:-[A-Z]{3})?)$/i.test(
@@ -82,7 +85,10 @@ function correlation(value?: string) {
     : null;
 }
 
-/** Classify a failure without retaining raw provider or credential-bearing payloads. */
+/** Classify a failure without retaining raw provider or credential-bearing payloads.
+ * @param cause - Unknown operation failure, potentially containing secrets.
+ * @returns An allowlisted provider-failure kind or the unknown classification.
+ */
 function failure(cause: unknown) {
   if (
     cause instanceof Error &&
@@ -96,7 +102,9 @@ function failure(cause: unknown) {
   return 'unknown';
 }
 
-/** Emit structured diagnostic metadata rather than raw request or provider bodies. */
+/** Emit structured diagnostic metadata rather than raw request or provider bodies.
+ * @param input - Operation metadata whose fields are rechecked against fixed allowlists.
+ */
 export function diagnostic(input: Diagnostic): void {
   try {
     const fields = {
@@ -143,7 +151,13 @@ export function diagnostic(input: Diagnostic): void {
   }
 }
 
-/** Represent unavailable data or configuration without treating it as an empty successful result. */
+/** Represent unavailable data or configuration without treating it as an empty successful result.
+ * @param operation - Operation label checked against the diagnostic allowlist.
+ * @param provider - Provider label checked against the diagnostic allowlist.
+ * @param cause - Optional failure used only for controlled classification.
+ * @param requestId - Optional request correlation identifier.
+ * @param method - Optional supported HTTP/RPC read method.
+ */
 export function unavailable(
   operation: string,
   provider: string,
@@ -162,7 +176,12 @@ export function unavailable(
   });
 }
 
-/** Record bounded refresh timing and outcome while preserving the operation result. */
+/** Record bounded refresh timing and outcome while preserving the operation result.
+ * @param operation - Refresh label checked against the diagnostic allowlist.
+ * @param work - Refresh operation to await without changing its result or failure.
+ * @param requestId - Optional request correlation identifier.
+ * @returns The unchanged successful operation result; original failures are rethrown.
+ */
 export async function refreshDiagnostic<T>(
   operation: string,
   work: () => Promise<T>,

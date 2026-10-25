@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getConfig } from '../../src/config.ts';
 
-test('configuration preserves explicit origins, provider keys and cache-only mode', () => {
+void test('configuration preserves explicit origins, provider keys and cache-only mode', () => {
   assert.deepEqual(
     getConfig({
       CORS_ORIGINS: ' https://iris.test, ,http://localhost:5173 ',
@@ -26,7 +26,7 @@ test('configuration preserves explicit origins, provider keys and cache-only mod
   );
 });
 
-test('missing provider configuration stays empty and default mode stays live', () => {
+void test('missing provider configuration stays empty and default mode stays live', () => {
   assert.deepEqual(getConfig({}), {
     corsOrigins: [],
     heliusApiKey: '',

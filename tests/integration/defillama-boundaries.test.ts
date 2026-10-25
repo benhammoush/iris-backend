@@ -15,7 +15,7 @@ import {
   STALE_AFTER_MS,
 } from '../../src/constants.ts';
 
-test('cache envelope narrowing does not claim cached item fields are validated', async () => {
+void test('cache envelope narrowing does not claim cached item fields are validated', async () => {
   const dashboard = {
     source: 'defillama',
     fetchedAt: '2026-10-06T00:00:00.000Z',
@@ -25,8 +25,10 @@ test('cache envelope narrowing does not claim cached item fields are validated',
   assert.equal(isUsableDefiLlamaDashboard(dashboard), true);
   const fetchedAt = Date.parse(dashboard.fetchedAt);
   const cache = {
-    /** Read the controlled cache or boundary value used by this assertion. */
-    get: async () => dashboard,
+    /** Read the controlled cache envelope.
+     * @returns Fixture metadata whose item fields intentionally remain unvalidated.
+     */
+    get: () => Promise.resolve(dashboard),
   };
   assert.equal(
     (await loadDefiLlamaDashboard(cache, fetchedAt + DEFILLAMA_FRESH_AFTER_MS))
@@ -56,7 +58,7 @@ test('cache envelope narrowing does not claim cached item fields are validated',
   );
 });
 
-test('malformed cache envelopes return unavailable rather than asserting a dashboard', async () => {
+void test('malformed cache envelopes return unavailable rather than asserting a dashboard', async () => {
   for (const value of [
     null,
     [],
@@ -72,8 +74,10 @@ test('malformed cache envelopes return unavailable rather than asserting a dashb
     assert.equal(isUsableDefiLlamaDashboard(value), false);
     assert.deepEqual(
       await loadDefiLlamaDashboard({
-        /** Read the controlled cache or boundary value used by this assertion. */
-        get: async () => value,
+        /** Read one malformed fixture envelope.
+         * @returns The controlled invalid cache value.
+         */
+        get: () => Promise.resolve(value),
       }),
       {
         dashboard: null,
@@ -83,37 +87,41 @@ test('malformed cache envelopes return unavailable rather than asserting a dashb
   }
 });
 
-test('provider normalization preserves existing numeric coercion and rejects invalid item shapes', async (t) => {
-  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) =>
-    Response.json(
-      String(url).includes('/overview/')
-        ? {
-            protocols: [
+void test('provider normalization preserves existing numeric coercion and rejects invalid item shapes', async (t) => {
+  t.mock.method(globalThis, 'fetch', (url: string | URL | Request) =>
+    Promise.resolve(
+      Response.json(
+        (url instanceof Request ? url.url : url.toString()).includes(
+          '/overview/',
+        )
+          ? {
+              protocols: [
+                null,
+                42,
+                [],
+                { name: 'Bad' },
+                {
+                  name: 'DEX',
+                  slug: 'dex',
+                  total24h: '12.5',
+                  total7d: null,
+                  change_1d: 'not-a-number',
+                },
+              ],
+            }
+          : [
               null,
               42,
               [],
-              { name: 'Bad' },
               {
-                name: 'DEX',
-                slug: 'dex',
-                total24h: '12.5',
-                total7d: null,
-                change_1d: 'not-a-number',
+                name: 'Protocol',
+                slug: 'protocol',
+                chains: ['Solana'],
+                chainTvls: { Solana: '100.5' },
+                change_1d: null,
               },
             ],
-          }
-        : [
-            null,
-            42,
-            [],
-            {
-              name: 'Protocol',
-              slug: 'protocol',
-              chains: ['Solana'],
-              chainTvls: { Solana: '100.5' },
-              change_1d: null,
-            },
-          ],
+      ),
     ),
   );
   const dashboard = await refreshDefiLlamaDashboard(
@@ -128,20 +136,23 @@ test('provider normalization preserves existing numeric coercion and rejects inv
   assert.equal(dashboard.protocols.items[0]?.solanaTvlUsd, 100.5);
 });
 
-test('invalid provider envelopes and HTTP failures never publish a cache record', async (t) => {
+void test('invalid provider envelopes and HTTP failures never publish a cache record', async (t) => {
   let writes = 0;
   const cache = {
-    /** Observe or simulate the cache write requested by this test. */
-    put: async () => {
+    /** Observe or simulate the cache write requested by this test.
+     * @returns Completion after incrementing the attempted-write counter.
+     */
+    put: () => {
       writes += 1;
+      return Promise.resolve();
     },
   };
-  const fetchMock = t.mock.method(globalThis, 'fetch', async () =>
-    Response.json({ invalid: true }),
+  const fetchMock = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json({ invalid: true })),
   );
   await assert.rejects(refreshDefiLlamaDashboard(cache), /payload is invalid/);
-  fetchMock.mock.mockImplementation(
-    async () => new Response('Unavailable', { status: 503 }),
+  fetchMock.mock.mockImplementation(() =>
+    Promise.resolve(new Response('Unavailable', { status: 503 })),
   );
   await assert.rejects(
     refreshDefiLlamaDashboard(cache),

@@ -6,7 +6,11 @@
 import { appendFile, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-/** Recognize only CodeRabbit's current-head, machine-delimited clean-review coverage. */
+/** Recognize only CodeRabbit's current-head, machine-delimited clean-review coverage.
+ * @param comments - Complete bounded comment evidence with author/editor provenance.
+ * @param head - Exact candidate SHA requiring review coverage.
+ * @returns Whether a recognized genuine review publication covers that exact head.
+ */
 export function hasReviewedWalkthrough(comments, head) {
   return (comments ?? []).some((comment) => {
     if (
@@ -47,7 +51,11 @@ export function hasReviewedWalkthrough(comments, head) {
   });
 }
 
-/** A gate reports evidence; it never merges, approves or changes protection. */
+/** A gate reports evidence; it never merges, approves or changes protection.
+ * @param value - Collected candidate, native-state, CI and review evidence.
+ * @param policy - Trusted manual-only repository/check/review expectations.
+ * @returns Eligibility observations and rejection reasons, never merge permission.
+ */
 export function evaluate(value, policy) {
   const reasons = [];
   const { pr, final, native, run, jobs = [], reviews = [], status } = value;
@@ -174,7 +182,12 @@ export function evaluate(value, policy) {
   };
 }
 
-/** Bounded complete evidence; truncation and network errors never become a pass. */
+/** Bounded complete evidence; truncation and network errors never become a pass.
+ * @param client - Read-only GitHub evidence adapter.
+ * @param path - Repository-scoped evidence collection path.
+ * @param key - Optional envelope field containing the records.
+ * @returns Complete records within the pagination bound; truncation rejects.
+ */
 export async function list(client, path, key) {
   const result = [];
   for (let page = 1; page <= 30; page++) {
@@ -189,7 +202,12 @@ export async function list(client, path, key) {
   throw new Error('Evidence exceeds pagination limit');
 }
 
-/** Read mutable evidence twice: candidate identity alone does not detect reruns/reviews. */
+/** Read mutable evidence twice: candidate identity alone does not detect reruns/reviews.
+ * @param client - Read-only GitHub evidence adapter.
+ * @param pr - Candidate identity and head SHA.
+ * @param policy - Trusted repository/check/review expectations.
+ * @returns One sample of current CI, review and native conversation evidence.
+ */
 async function collect(client, pr, policy) {
   const root = `/repos/${policy.repository}`;
   const number = pr.number;
@@ -229,7 +247,12 @@ async function collect(client, pr, policy) {
   };
 }
 
-/** Report only stable, current candidate/base and mutable evidence snapshots. */
+/** Report only stable, current candidate/base and mutable evidence snapshots.
+ * @param client - Read-only GitHub evidence adapter.
+ * @param number - Positive pull-request number to observe.
+ * @param policy - Trusted manual-only repository policy.
+ * @returns Evidence-only eligibility after repeat sampling detects races.
+ */
 export async function observe(client, number, policy) {
   if (!Number.isSafeInteger(number) || number < 1)
     throw new Error('Invalid PR number');
@@ -249,10 +272,18 @@ export async function observe(client, number, policy) {
   );
 }
 
-/** Fixed-host read-only transport; no PR text, artifacts or candidate code is executed. */
+/** Fixed-host read-only transport; no PR text, artifacts or candidate code is executed.
+ * @param token - Read credential retained only in request headers.
+ * @param fetcher - Injectable fixed-host transport.
+ * @returns Repository-read and fixed native-state query operations, never mutation operations.
+ */
 export function githubReader(token, fetcher = fetch) {
   if (!token) throw new Error('GITHUB_TOKEN required');
-  /** Perform the boundary request and translate unsuccessful responses into the caller-facing error contract. */
+  /** Perform the boundary request and translate unsuccessful responses into the caller-facing error contract.
+   * @param path - Fixed REST or GraphQL evidence-read endpoint.
+   * @param query - Optional fixed read query and variables.
+   * @returns Parsed evidence, rejecting HTTP and GraphQL failures.
+   */
   const request = async (path, query) => {
     const response = await fetcher(`https://api.github.com${path}`, {
       method: query ? 'POST' : 'GET',
@@ -273,12 +304,19 @@ export function githubReader(token, fetcher = fetch) {
     return value;
   };
   return {
-    /** Read an authenticated GitHub REST endpoint restricted to repository paths. */
+    /** Read an authenticated GitHub REST endpoint restricted to repository paths.
+     * @param path - Repository-scoped evidence path.
+     * @returns Parsed repository evidence.
+     */
     get: (path) => {
       if (!path.startsWith('/repos/')) throw new Error('Unsupported read');
       return request(path);
     },
-    /** Resolve the native repository review evidence consumed by the merge gate. */
+    /** Resolve the native repository review evidence consumed by the merge gate.
+     * @param repository - Exact owner/repository identity selected by trusted policy.
+     * @param number - Pull-request number to inspect.
+     * @returns Candidate, conversation and review-publication evidence with bounded completeness.
+     */
     native: async (repository, number) => {
       const [owner, name] = repository.split('/');
       const response = await request('/graphql', {
@@ -297,7 +335,12 @@ export function githubReader(token, fetcher = fetch) {
   };
 }
 
-/** Resolve event identity from GitHub metadata, never descriptions or labels. */
+/** Resolve event identity from GitHub metadata, never descriptions or labels.
+ * @param event - Trusted workflow event metadata.
+ * @param client - Read-only GitHub adapter for resolving open candidates.
+ * @param policy - Exact trusted repository scope.
+ * @returns Relevant candidate numbers, rejecting missing or malformed event identity.
+ */
 export async function candidates(event, client, policy) {
   if (event.pull_request) return [event.pull_request.number];
   if (event.inputs?.pr) {
