@@ -1,4 +1,6 @@
-/** Deliver the tested Worker while preserving isolated namespaces, preview policy and explicit refresh semantics. @file */
+/** Deliver the tested Worker while preserving isolated namespaces, preview policy and explicit refresh semantics.
+ * @file
+ */
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';

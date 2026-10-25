@@ -1,7 +1,14 @@
+/**
+ * Public HTTP response envelopes, correlation and CORS headers.
+ * @packageDocumentation
+ */
+
+/** Create or normalize a request identifier for response and diagnostic correlation. */
 export function requestId(request: { headers: Pick<Headers, 'get'> }): string {
   return request.headers.get('cf-ray') || crypto.randomUUID();
 }
 
+/** Serialize the response envelope with explicit status, request correlation and CORS headers. */
 export function json(
   body: unknown,
   status: number,
@@ -21,6 +28,7 @@ export function json(
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+/** Build a public error envelope without leaking internal failure details. */
 export function error(
   code: string,
   message: string,

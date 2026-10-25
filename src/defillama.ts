@@ -1,3 +1,8 @@
+/**
+ * External dashboard normalization, caching and explicit stale-data handling.
+ * @packageDocumentation
+ */
+
 import {
   DEFILLAMA_DASHBOARD_KEY,
   DEFILLAMA_FRESH_AFTER_MS,
@@ -7,8 +12,11 @@ import { isRecord } from './record.ts';
 import { providerJson } from './providerRequest.ts';
 import { singleFlight } from './singleFlight.ts';
 
+/** Cache binding operations needed by the external dashboard resource. */
 export interface DefiLlamaCache {
+  /** Read the JSON cache entry for this dashboard key. */
   get?: (key: string, type: 'json') => Promise<unknown>;
+  /** Persist the cache entry using the supplied key and optional expiry policy. */
   put?: (
     key: string,
     value: string,
@@ -17,6 +25,7 @@ export interface DefiLlamaCache {
 }
 
 // Cache readiness validates the envelope only; cached item fields stay unknown.
+/** Stored dashboard payload and the timestamp used to classify freshness. */
 export interface CachedDefiLlamaDashboard extends Record<string, unknown> {
   source: 'defillama';
   fetchedAt: string;
@@ -26,17 +35,20 @@ export interface CachedDefiLlamaDashboard extends Record<string, unknown> {
 
 const DEFILLAMA = 'https://api.llama.fi';
 
+/** Coerce with Number and return null only for non-finite results; null and empty text coerce to zero. */
 function finiteOrNull(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
+/** Normalize the provider timestamp for cache and freshness calculations. */
 function timestamp(value: unknown): string | null {
   return typeof value === 'string' && Number.isFinite(Date.parse(value))
     ? value
     : null;
 }
 
+/** Normalize supported exchange metrics from the upstream dashboard payload. */
 function dexesFrom(payload: unknown) {
   const items: unknown[] | null =
     isRecord(payload) && Array.isArray(payload.protocols)
@@ -81,6 +93,7 @@ function dexesFrom(payload: unknown) {
   };
 }
 
+/** Normalize supported protocol metrics from the upstream dashboard payload. */
 function protocolsFrom(payload: unknown) {
   if (!Array.isArray(payload))
     throw new Error('DefiLlama protocol payload is invalid.');
@@ -117,6 +130,7 @@ function protocolsFrom(payload: unknown) {
   return { total: normalized.length, items: normalized };
 }
 
+/** Check that cached dashboard data has the fields required for safe reuse. */
 export function isUsableDefiLlamaDashboard(
   dashboard: unknown,
 ): dashboard is CachedDefiLlamaDashboard {
@@ -131,6 +145,7 @@ export function isUsableDefiLlamaDashboard(
   );
 }
 
+/** Refresh the dashboard and retain usable cached data according to the stale-data policy. */
 async function defiLlamaWork(
   kv: DefiLlamaCache | null | undefined,
   now: Date,
@@ -163,6 +178,7 @@ async function defiLlamaWork(
   return dashboard;
 }
 
+/** Coalesce equivalent dashboard refreshes within the same cache binding. */
 export function refreshDefiLlamaDashboard(
   kv?: DefiLlamaCache | null,
   now = new Date(),
@@ -175,6 +191,7 @@ export function refreshDefiLlamaDashboard(
   );
 }
 
+/** Resolve dashboard data with explicit cache freshness and fallback semantics. */
 export async function loadDefiLlamaDashboard(
   kv?: DefiLlamaCache | null,
   now = Date.now(),

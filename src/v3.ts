@@ -1,3 +1,8 @@
+/**
+ * Versioned asset, wallet and event resource contracts with scoped caching.
+ * @packageDocumentation
+ */
+
 import {
   SOL_MINT,
   V3_ASSET_DISTRIBUTION_KEY_PREFIX,
@@ -19,16 +24,19 @@ import { array, record, isRecord } from './record.ts';
 import type { Env } from './env.ts';
 import type { ProviderConfig as WorkerConfig } from './config.ts';
 
+/** Accept only timestamps that can be represented by the response contract. */
 function validDate(value: unknown): boolean {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 
 const HELIUS_RPC = 'https://mainnet.helius-rpc.com/';
 
+/** Normalize finite numeric provider values and preserve unavailable data as null. */
 function finiteOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** Build asset identity with unavailable metrics represented as null, not fabricated zero values. */
 function fallbackAsset(mint: string, decimals: unknown) {
   return {
     mint,
@@ -45,6 +53,7 @@ function fallbackAsset(mint: string, decimals: unknown) {
   };
 }
 
+/** Normalize an asset into the v3 response contract, preserving unavailable fields. */
 export function v3Asset(value: unknown): Record<string, unknown> {
   const asset = record(value);
   if (isRecord(asset.v3)) return asset.v3;
@@ -77,6 +86,7 @@ export function v3Asset(value: unknown): Record<string, unknown> {
   };
 }
 
+/** Normalize usable history observations without inventing missing time or price values. */
 export function mapV3HistoryPoints(points: unknown) {
   if (!Array.isArray(points)) return null;
   return array(points)
@@ -94,6 +104,7 @@ export function mapV3HistoryPoints(points: unknown) {
     });
 }
 
+/** Call the configured Solana RPC provider with a bounded request deadline. */
 export async function heliusRpc(
   method: string,
   params: unknown[] | Record<string, unknown>,
@@ -118,10 +129,12 @@ export async function heliusRpc(
   return payload.result;
 }
 
+/** Preserve unavailable text as null rather than inventing a value. */
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null;
 }
 
+/** Validate the string representation of an exact atomic quantity. */
 function atomicString(value: unknown): string | null {
   return typeof value === 'string' && /^\d+$/.test(value)
     ? value
@@ -130,6 +143,7 @@ function atomicString(value: unknown): string | null {
       : null;
 }
 
+/** Read a cached value only when its resource-specific validator accepts it. */
 async function cachedValue(
   env: Env,
   key: string,
@@ -141,14 +155,17 @@ async function cachedValue(
   return isRecord(cached) && validate(cached) ? cached : null;
 }
 
+/** Label this response fresh and forward its observation time unchanged; this helper does not check age. */
 function cachedFreshness(asOf: unknown) {
   return { cacheState: 'fresh', asOf };
 }
 
+/** Determine whether this configuration forbids live provider refreshes. */
 function cacheOnly(config: WorkerConfig) {
   return config.providerMode === 'cache-only';
 }
 
+/** Combine independent supply and account evidence into the on-chain asset profile. */
 function assetOnchainProfile(
   mint: string,
   assetValue: unknown,
@@ -217,6 +234,7 @@ function assetOnchainProfile(
   };
 }
 
+/** Normalize an asset-provider holder record into the public holder contract. */
 function holderFromDas(value: unknown) {
   const item = record(value);
   const tokenInfo = record(item.token_info);
@@ -242,6 +260,7 @@ function holderFromDas(value: unknown) {
   };
 }
 
+/** Normalize a token-account holder using the asset decimal precision. */
 function holderFromTokenAccount(value: unknown, decimals: unknown) {
   const item = record(value);
   const atomicAmount = atomicString(item?.amount);
@@ -263,6 +282,7 @@ function holderFromTokenAccount(value: unknown, decimals: unknown) {
   };
 }
 
+/** Compute a display percentage from exact atomic amounts without changing the stored quantities. */
 function percentageOfSupply(amount: string | null, supply: string | null) {
   if (
     !amount ||
@@ -278,6 +298,7 @@ function percentageOfSupply(amount: string | null, supply: string | null) {
   return `${hundredths / 100n}.${String(hundredths % 100n).padStart(2, '0')}`;
 }
 
+/** Combine RPC account evidence with supply data for a distribution row. */
 function largestAccountFromRpc(
   value: unknown,
   account: unknown,
@@ -305,6 +326,7 @@ function largestAccountFromRpc(
   };
 }
 
+/** Resolve on-chain asset details with explicit cache and provider-failure semantics. */
 async function assetOnchainWork(env: Env, config: WorkerConfig, mint: string) {
   const key = `asset:v3:onchain:${mint}`;
   const cached = await cachedValue(
@@ -342,6 +364,7 @@ async function assetOnchainWork(env: Env, config: WorkerConfig, mint: string) {
   return { profile, freshness: { cacheState: 'miss', asOf } };
 }
 
+/** Resolve one bounded page of asset holders. */
 async function assetHoldersWork(
   env: Env,
   config: WorkerConfig,
@@ -424,6 +447,7 @@ async function assetHoldersWork(
   };
 }
 
+/** Resolve the supported largest-account distribution for one mint. */
 async function assetDistributionWork(
   env: Env,
   config: WorkerConfig,
@@ -503,6 +527,7 @@ async function assetDistributionWork(
   };
 }
 
+/** Fetch bounded parsed transaction events from the configured provider. */
 async function parsedEvents(
   address: string,
   apiKey: string,
@@ -534,6 +559,7 @@ async function parsedEvents(
   };
 }
 
+/** Extract a transfer for the requested mint from a parsed transaction. */
 function transferFromParsed(value: unknown, mint: string) {
   const transfer = record(value);
   const atomicAmount = atomicString(
@@ -558,6 +584,7 @@ function transferFromParsed(value: unknown, mint: string) {
   };
 }
 
+/** Normalize a parsed transaction into the asset transaction contract. */
 function assetTransactionFrom(value: unknown, mint: string) {
   const event = record(value);
   const parsed = record(event.parsed);
@@ -585,6 +612,7 @@ function assetTransactionFrom(value: unknown, mint: string) {
   };
 }
 
+/** Resolve a bounded cursor page of asset transaction history. */
 async function assetTransactionsWork(
   env: Env,
   config: WorkerConfig,
@@ -626,6 +654,7 @@ async function assetTransactionsWork(
   };
 }
 
+/** Normalize an asset-provider wallet holding while preserving exact quantity fields. */
 function dasHolding(value: unknown) {
   const item = record(value);
   const mint = item?.id;
@@ -644,6 +673,7 @@ function dasHolding(value: unknown) {
   return { mint, rawAmount: String(rawAmount), decimals };
 }
 
+/** Combine wallet holdings and market metadata without treating missing prices as zero. */
 export function mapDasWallet(
   address: string,
   value: unknown,
@@ -717,6 +747,7 @@ export function mapDasWallet(
   };
 }
 
+/** Resolve wallet data and optionally refresh the market metadata used for valuation. */
 async function walletWork(
   env: Env,
   config: WorkerConfig,
@@ -787,6 +818,7 @@ async function walletWork(
   return { wallet, freshness: { cacheState: 'miss', asOf } };
 }
 
+/** Normalize an exact atomic quantity without a lossy floating-point conversion. */
 function atomicAmount(value: unknown): string | null {
   const raw = record(value).tokenAmount ?? record(value).amount ?? value;
   if (typeof raw === 'string' && /^\d+$/.test(raw)) return raw;
@@ -797,6 +829,7 @@ function atomicAmount(value: unknown): string | null {
     : null;
 }
 
+/** Extract supported transfer details from parsed transaction evidence. */
 function transferDetails(parsed: Record<string, unknown>) {
   return {
     native: array(parsed.nativeTransfers)
@@ -837,6 +870,7 @@ function transferDetails(parsed: Record<string, unknown>) {
   };
 }
 
+/** Normalize provider transaction evidence into the v3 event contract. */
 export function mapV3Event(value: unknown) {
   const event = record(value);
   const parsed = record(event.parsed);
@@ -863,6 +897,7 @@ export function mapV3Event(value: unknown) {
   };
 }
 
+/** Resolve a bounded cursor page of address events. */
 async function eventsWork(
   env: Env,
   config: WorkerConfig,
@@ -897,6 +932,7 @@ async function eventsWork(
   return { events: data, nextCursor: page.paginationToken };
 }
 
+/** Coalesce equivalent on-chain asset reads under the complete resource and provider identity. */
 export function loadV3AssetOnchain(
   env: Env,
   config: WorkerConfig,
@@ -909,6 +945,7 @@ export function loadV3AssetOnchain(
   );
 }
 
+/** Coalesce equivalent holder-page reads under the complete resource and provider identity. */
 export function loadV3AssetHolders(
   env: Env,
   config: WorkerConfig,
@@ -922,6 +959,7 @@ export function loadV3AssetHolders(
   );
 }
 
+/** Coalesce equivalent distribution reads under the complete resource and provider identity. */
 export function loadV3AssetDistribution(
   env: Env,
   config: WorkerConfig,
@@ -934,6 +972,7 @@ export function loadV3AssetDistribution(
   );
 }
 
+/** Coalesce equivalent asset transaction pages without mixing cursors or limits. */
 export function loadV3AssetTransactions(
   env: Env,
   config: WorkerConfig,
@@ -948,6 +987,7 @@ export function loadV3AssetTransactions(
   );
 }
 
+/** Coalesce equivalent wallet reads without mixing market-refresh policies. */
 export function loadV3Wallet(
   env: Env,
   config: WorkerConfig,
@@ -961,6 +1001,7 @@ export function loadV3Wallet(
   );
 }
 
+/** Coalesce equivalent event pages without mixing address, cursor or limit. */
 export function loadV3Events(
   env: Env,
   config: WorkerConfig,

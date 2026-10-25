@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for routes.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../../src/index.ts';
@@ -57,6 +62,7 @@ test('deprecated v1 and v2 asset routes remain compatibility aliases', async () 
   const timestamp = Math.floor(Date.now() / 1000);
   fetchStub.fetch = async () => ({
     ok: true,
+    /** Return the controlled JSON payload for this provider-response fixture. */
     json: async () => ({
       success: true,
       data: {
@@ -139,6 +145,7 @@ test('v3 asset on-chain and holder routes expose Helius data separately from mar
     if (request.method === 'getAsset')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: {
             interface: 'FungibleToken',
@@ -150,11 +157,13 @@ test('v3 asset on-chain and holder routes expose Helius data separately from mar
     if (request.method === 'getTokenSupply')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({ result: { value: { amount: '1' } } }),
       };
     if (request.method === 'getAccountInfo')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: { value: { data: { parsed: { info: { decimals: 9 } } } } },
         }),
@@ -162,6 +171,7 @@ test('v3 asset on-chain and holder routes expose Helius data separately from mar
     if (request.method === 'getTokenAccounts')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({ result: { total: 1, items: [] } }),
       };
     throw new Error(`Unexpected ${request.method}`);
@@ -232,6 +242,7 @@ test('v3 DefiLlama returns its independently cached dashboard data', async () =>
     new Request('https://api.example/v3/defillama'),
     env({
       SNAPSHOTS: {
+        /** Read the controlled cache or boundary value used by this assertion. */
         get: async (key) =>
           key === 'defillama:v3:dashboard' ? dashboard : null,
       },
@@ -298,7 +309,9 @@ test('v3 recent transactions returns a bounded cached feed without calling Heliu
       env({
         HELIUS_API_KEY: 'h',
         SNAPSHOTS: {
+          /** Read the controlled cache or boundary value used by this assertion. */
           get: async (key) => (key === 'helius:v3:dashboard' ? sample : null),
+          /** Observe or simulate the cache write requested by this test. */
           put: async () => {},
         },
       }),

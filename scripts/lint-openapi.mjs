@@ -1,3 +1,8 @@
+/**
+ * Validate the canonical OpenAPI document with the repository's blocking rules.
+ * @file
+ */
+
 import {
   createConfig,
   formatProblems,

@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for market.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_CATALOG_ASSETS, SOL_MINT } from '../../src/constants.ts';

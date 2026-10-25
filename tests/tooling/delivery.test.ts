@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for delivery.
+ * @packageDocumentation
+ */
+
 /** Consumer and isolation contracts; executable rejection tests live with the pinned shared release guards. */
 import test from 'node:test';
 import assert from 'node:assert/strict';

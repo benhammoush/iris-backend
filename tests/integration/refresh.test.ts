@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for refresh.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadWalletData, refreshSnapshot } from '../../src/snapshot.ts';
@@ -24,14 +29,20 @@ test('arbitrary public wallet lookup uses Helius without numeric raw balances', 
       if (method === 'getBalance')
         return {
           ok: true,
+          /** Return the controlled JSON payload for this provider-response fixture. */
           json: async () => ({
             result: { value: 9007199254740993000n.toString() },
           }),
         };
       if (options.body.includes('TokenzQdYQneH1k9i7gNJYkC7V3Tv1ALb6TrC3CFQeX'))
-        return { ok: true, json: async () => ({ result: { value: [] } }) };
+        return {
+          ok: true,
+          /** Return the controlled JSON payload for this provider-response fixture. */
+          json: async () => ({ result: { value: [] } }),
+        };
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: {
             value: [
@@ -55,6 +66,7 @@ test('arbitrary public wallet lookup uses Helius without numeric raw balances', 
     if (value.includes('/addresses/'))
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => [
           {
             signature: 'signature',
@@ -77,6 +89,7 @@ test('arbitrary public wallet lookup uses Helius without numeric raw balances', 
     if (value.includes('/tokens/'))
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => [
           {
             address: value.includes(encodeURIComponent(usdc)) ? usdc : SOL_MINT,
@@ -88,6 +101,7 @@ test('arbitrary public wallet lookup uses Helius without numeric raw balances', 
       };
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => ({
         [SOL_MINT]: { usdPrice: 150 },
         [usdc]: { usdPrice: 1 },
@@ -119,7 +133,9 @@ test('refresh does not publish a new fixture when Helius is not configured', asy
   const snapshot = await refreshSnapshot(
     {
       SNAPSHOTS: {
+        /** Read the controlled cache or boundary value used by this assertion. */
         get: async () => null,
+        /** Observe or simulate the cache write requested by this test. */
         put: async (key, value) => writes.set(key, value),
       },
     },
@@ -144,8 +160,10 @@ test('refresh preserves reviewed swaps when a tracked Helius pool refresh fails'
     { value: string; options?: { expirationTtl?: number } }
   >();
   const snapshots: SnapshotStore = {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key) =>
       key === 'snapshot:current' ? { key: 'snapshot:previous' } : previous,
+    /** Observe or simulate the cache write requested by this test. */
     put: async (key, value, options) => writes.set(key, { value, options }),
   };
   const originalFetch = fetchStub.fetch;
@@ -153,10 +171,15 @@ test('refresh preserves reviewed swaps when a tracked Helius pool refresh fails'
     const value = String(url);
     if (value.includes('/addresses/')) throw new Error('Helius unavailable');
     if (value.includes('helius-rpc'))
-      return { ok: true, json: async () => ({ result: 123 }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ result: 123 }),
+      };
     if (value.includes('/toptraded/'))
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => [
           {
             id: SOL_MINT,
@@ -167,8 +190,17 @@ test('refresh preserves reviewed swaps when a tracked Helius pool refresh fails'
           },
         ],
       };
-    if (value.includes('/search?')) return { ok: true, json: async () => [] };
-    return { ok: true, json: async () => [] };
+    if (value.includes('/search?'))
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => [],
+      };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => [],
+    };
   };
   try {
     const refreshed = await refreshSnapshot(

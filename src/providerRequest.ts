@@ -1,8 +1,16 @@
+/**
+ * Bounded provider requests, controlled retries and classified failures.
+ * @packageDocumentation
+ */
+
 import { diagnostic } from './diagnostics.ts';
 
+/** Supported provider failure categories for safe diagnostics and retry decisions. */
 export type ProviderFailure = 'http' | 'network' | 'timeout' | 'json';
 
+/** Provider failure retaining only provider identity, category and optional HTTP status. */
 export class ProviderRequestError extends Error {
+  /** Initialize this error or state owner with the supplied context. */
   constructor(
     readonly provider: string,
     readonly kind: ProviderFailure,
@@ -19,6 +27,7 @@ export class ProviderRequestError extends Error {
 
 const RETRY_STATUSES = new Set([429, 502, 503, 504]);
 
+/** Combine Retry-After with jitter; the caller rejects delays beyond its remaining deadline. */
 function retryDelay(response?: Response): number {
   const jitter = 250 + Math.floor(Math.random() * 251);
   const value = response?.headers?.get('retry-after')?.trim();
@@ -60,6 +69,7 @@ export async function providerJson(
       reject(timeoutError);
     }, timeoutMs);
   });
+  /** Attempt the provider read at most twice within the shared overall deadline. */
   async function run(): Promise<unknown> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (controller.signal.aborted || Date.now() >= deadline)
@@ -114,6 +124,7 @@ export async function providerJson(
       await response?.body?.cancel().catch(() => {});
       await new Promise<void>((resolve) => {
         const wait = setTimeout(done, delay);
+        /** Finish the pending request once and release its owned deadline or listener resources. */
         function done() {
           clearTimeout(wait);
           controller.signal.removeEventListener('abort', done);

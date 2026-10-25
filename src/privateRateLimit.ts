@@ -1,3 +1,8 @@
+/**
+ * Account-scoped request budgeting for private provider work.
+ * @packageDocumentation
+ */
+
 import type { Env } from './env.ts';
 import { PrivateError } from './privateError.ts';
 

@@ -1,3 +1,8 @@
+/**
+ * Authenticated, account-isolated saved-asset and saved-wallet operations.
+ * @packageDocumentation
+ */
+
 import type { Env } from './env.ts';
 import { authenticateFirebase } from './firebaseAuth.ts';
 import { error, json } from './http.ts';
@@ -5,6 +10,7 @@ import { PrivateError } from './privateError.ts';
 import { isBase58PublicKey } from './transforms.ts';
 import { privateRateLimit } from './privateRateLimit.ts';
 
+/** Minimal request fields accepted by the private watchlist route. */
 interface PrivateRequest {
   url: string;
   method: string;
@@ -12,6 +18,7 @@ interface PrivateRequest {
   body?: ReadableStream<Uint8Array> | null;
 }
 
+/** Handle authenticated watchlist operations without exposing private account data to public routes. */
 export async function watchlistRoute(
   request: PrivateRequest,
   env: Env,
@@ -77,12 +84,14 @@ export async function watchlistRoute(
       )
       .bind(uid)
       .run();
+    /** Prepare the active-account lookup used in the same batch as private data access. */
     const active = () =>
       db
         .prepare(
           "SELECT state FROM watchlist_accounts WHERE uid = ? AND state = 'active'",
         )
         .bind(uid);
+    /** Validate that the account remains active before accepting stored watchlist results. */
     const checkActive = (rows: unknown[]) => {
       if (!rows.length) throw new PrivateError('ACCOUNT_DELETING', 403);
     };
@@ -97,6 +106,7 @@ export async function watchlistRoute(
       ]);
       checkActive(result[0].results);
       const items = result[1].results;
+      /** Project saved rows of the requested kind into the private response collection. */
       const section = (kind: string) =>
         items
           .filter((item) => item.kind === kind)

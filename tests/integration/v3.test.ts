@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for v3.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -94,6 +99,7 @@ test('v3 canonical mint routes return range-aware Birdeye close-price history an
   const timestamp = Math.floor(Date.now() / 1000);
   fetchStub.fetch = async () => ({
     ok: true,
+    /** Return the controlled JSON payload for this provider-response fixture. */
     json: async () => ({
       success: true,
       data: {
@@ -154,6 +160,7 @@ test('v3 candle pagination requests the preceding provider window and rejects in
     requestUrl = String(url);
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => ({
         success: true,
         data: {
@@ -219,6 +226,7 @@ test('candle cache records expire after the existing stale window', async () => 
   }[] = [];
   fetchStub.fetch = async () => ({
     ok: true,
+    /** Return the controlled JSON payload for this provider-response fixture. */
     json: async () => ({
       success: true,
       data: {
@@ -231,7 +239,9 @@ test('candle cache records expire after the existing stale window', async () => 
   try {
     await candlesForAsset(
       {
+        /** Read the controlled cache or boundary value used by this assertion. */
         get: async () => null,
+        /** Observe or simulate the cache write requested by this test. */
         put: async (key, value, options) =>
           writes.push({ key, value, options }),
       },
@@ -253,6 +263,7 @@ test('v3 resolves a valid mint outside the snapshot through Jupiter', async () =
     String(url).includes('/tokens/v2/search')
       ? {
           ok: true,
+          /** Return the controlled JSON payload for this provider-response fixture. */
           json: async () => [
             {
               id: mint,
@@ -266,6 +277,7 @@ test('v3 resolves a valid mint outside the snapshot through Jupiter', async () =
         }
       : {
           ok: true,
+          /** Return the controlled JSON payload for this provider-response fixture. */
           json: async () => ({
             success: true,
             data: {
@@ -344,6 +356,7 @@ test('Helius on-chain profile preserves atomic supply and exposes only provider-
     if (request.method === 'getAsset')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: {
             interface: 'FungibleToken',
@@ -373,6 +386,7 @@ test('Helius on-chain profile preserves atomic supply and exposes only provider-
     if (request.method === 'getTokenSupply')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: { value: { amount: '9007199254740993123' } },
         }),
@@ -380,6 +394,7 @@ test('Helius on-chain profile preserves atomic supply and exposes only provider-
     if (request.method === 'getAccountInfo')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: { value: { data: { parsed: { info: { decimals: 6 } } } } },
         }),
@@ -421,6 +436,7 @@ test('Helius holder pages preserve atomic balances without claiming unique holde
       });
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: {
             total: 31,
@@ -440,6 +456,7 @@ test('Helius holder pages preserve atomic balances without claiming unique holde
     if (request.method === 'getAsset')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({ result: { token_info: { decimals: 6 } } }),
       };
     throw new Error(`Unexpected ${request.method}`);
@@ -479,6 +496,7 @@ test('Helius largest accounts preserve atomic values, parsed owners, and two-dec
     if (request.method === 'getTokenLargestAccounts')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: {
             context: { slot: 123 },
@@ -492,11 +510,13 @@ test('Helius largest accounts preserve atomic values, parsed owners, and two-dec
     if (request.method === 'getTokenSupply')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({ result: { value: { amount: '1000' } } }),
       };
     if (request.method === 'getMultipleAccounts')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: {
             value: [
@@ -564,6 +584,7 @@ test('Helius mint transaction history preserves all mint-address transactions an
     });
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => ({
         data: [
           {
@@ -635,7 +656,9 @@ test('v3 history negative-caches unavailable Birdeye responses', async () => {
   const values = new Map();
   let calls = 0;
   const kv: SnapshotStore = {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key) => values.get(key) || null,
+    /** Observe or simulate the cache write requested by this test. */
     put: async (key, value) => values.set(key, JSON.parse(value)),
   };
   const originalFetch = fetchStub.fetch;
@@ -643,6 +666,7 @@ test('v3 history negative-caches unavailable Birdeye responses', async () => {
     calls += 1;
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => ({ success: true, data: { items: [] } }),
     };
   };
@@ -681,11 +705,15 @@ test('v3 history preserves a stale seven-day Birdeye candle cache when the provi
   const originalFetch = fetchStub.fetch;
   fetchStub.fetch = async () => ({
     ok: true,
+    /** Return the controlled JSON payload for this provider-response fixture. */
     json: async () => ({ success: true, data: { items: [] } }),
   });
   try {
     const history = await historyForAsset(
-      { get: async () => cached },
+      {
+        /** Read the controlled cache or boundary value used by this assertion. */
+        get: async () => cached,
+      },
       SOL_MINT,
       'key',
     );
@@ -700,7 +728,9 @@ test('recent transaction samples batch parsed actions, preserve signature order,
   const cache = new Map();
   let calls = 0;
   const snapshots: SnapshotStore = {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key) => cache.get(key) || null,
+    /** Observe or simulate the cache write requested by this test. */
     put: async (key, value) => cache.set(key, JSON.parse(value)),
   };
   const originalFetch = fetchStub.fetch;
@@ -708,10 +738,15 @@ test('recent transaction samples batch parsed actions, preserve signature order,
     calls += 1;
     const request = JSON.parse(options.body);
     if (request.method === 'getSlot')
-      return { ok: true, json: async () => ({ result: 123 }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ result: 123 }),
+      };
     if (request.method === 'getBlock')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: {
             blockTime: 1_760_000_000,
@@ -722,6 +757,7 @@ test('recent transaction samples batch parsed actions, preserve signature order,
     if (Array.isArray(request.transactions))
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           data: [
             {
@@ -801,7 +837,9 @@ test('recent transaction samples batch parsed actions, preserve signature order,
 test('recent transaction samples remain fresh when Parsed Events is unavailable', async () => {
   const cache = new Map();
   const snapshots: SnapshotStore = {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key) => cache.get(key) || null,
+    /** Observe or simulate the cache write requested by this test. */
     put: async (key, value) => cache.set(key, JSON.parse(value)),
   };
   const originalFetch = fetchStub.fetch;
@@ -809,10 +847,15 @@ test('recent transaction samples remain fresh when Parsed Events is unavailable'
   fetchStub.fetch = async (_url, options) => {
     const request = JSON.parse(options.body);
     if (request.method === 'getSlot')
-      return { ok: true, json: async () => ({ result: 123 }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ result: 123 }),
+      };
     if (request.method === 'getBlock')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: { blockTime: 1_760_000_000, signatures: ['sig-a'] },
         }),
@@ -838,7 +881,9 @@ test('recent transaction samples remain fresh when Parsed Events is unavailable'
 test('Helius dashboard samples combine the 60-second transaction and requested network metrics', async () => {
   const cache = new Map();
   const snapshots: SnapshotStore = {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key) => cache.get(key) || null,
+    /** Observe or simulate the cache write requested by this test. */
     put: async (key, value) => cache.set(key, JSON.parse(value)),
   };
   const originalFetch = fetchStub.fetch;
@@ -847,6 +892,7 @@ test('Helius dashboard samples combine the 60-second transaction and requested n
     if (request.method === 'getSlot')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result:
             request.params?.[0]?.commitment === 'processed'
@@ -857,12 +903,21 @@ test('Helius dashboard samples combine the 60-second transaction and requested n
         }),
       };
     if (request.method === 'getBlockHeight')
-      return { ok: true, json: async () => ({ result: 100 }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ result: 100 }),
+      };
     if (request.method === 'getEpochInfo')
-      return { ok: true, json: async () => ({ result: { epoch: 7 } }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ result: { epoch: 7 } }),
+      };
     if (request.method === 'getRecentPerformanceSamples')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: [
             {
@@ -879,10 +934,15 @@ test('Helius dashboard samples combine the 60-second transaction and requested n
         }),
       };
     if (request.method === 'getBlocksWithLimit')
-      return { ok: true, json: async () => ({ result: [117] }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ result: [117] }),
+      };
     if (request.method === 'getBlock')
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result:
             request.params?.[1]?.transactionDetails === 'signatures'
@@ -896,7 +956,11 @@ test('Helius dashboard samples combine the 60-second transaction and requested n
         }),
       };
     if (Array.isArray(request.transactions))
-      return { ok: true, json: async () => ({ data: [] }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ data: [] }),
+      };
     throw new Error(`Unexpected ${request.method}`);
   };
   try {
@@ -970,6 +1034,7 @@ test('v3 wallet returns DAS balances as unpriced when Jupiter enrichment rejects
   const originalWarn = console.warn;
   fetchStub.fetch = async () => ({
     ok: true,
+    /** Return the controlled JSON payload for this provider-response fixture. */
     json: async () => ({
       result: {
         nativeBalance: { lamports: '1000000000' },
@@ -1062,6 +1127,7 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
     if (value.includes('/v1/parsed-events/transaction-history'))
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           data: Array.from({ length: 25 }, (_, index) => ({
             signature: `sig${index}`,
@@ -1099,6 +1165,7 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
     if (value.includes('mainnet.helius-rpc.com'))
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: { nativeBalance: { lamports: '1000000000' }, items: [] },
         }),
@@ -1106,6 +1173,7 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
     if (value.includes('/tokens/'))
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => [
           {
             id: SOL_MINT,
@@ -1119,11 +1187,14 @@ test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibili
       };
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => ({ prices: [[1_760_000_000_000, 150]] }),
     };
   };
   const snapshots: SnapshotStore = {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key) => cache.get(key) || null,
+    /** Observe or simulate the cache write requested by this test. */
     put: async (key, value) => {
       writes.push({ key, value });
       cache.set(key, JSON.parse(value));
@@ -1286,7 +1357,10 @@ test('cache-only mode serves all seeded v3 on-chain and wallet records without p
   };
   const seededEnv = env({
     PROVIDER_MODE: 'cache-only',
-    SNAPSHOTS: { get: async (key) => records.get(key) || null },
+    SNAPSHOTS: {
+      /** Read the controlled cache or boundary value used by this assertion. */
+      get: async (key) => records.get(key) || null,
+    },
   });
   try {
     for (const path of [

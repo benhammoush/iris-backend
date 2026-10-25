@@ -1,3 +1,8 @@
+/**
+ * Worker binding contracts and cache-store interfaces.
+ * @packageDocumentation
+ */
+
 import type {
   KVNamespace,
   KVNamespacePutOptions,
@@ -6,8 +11,11 @@ import type {
 } from '@cloudflare/workers-types';
 
 // JSON/string operations consumed by Iris; a Cloudflare KVNamespace implements this surface.
+/** Minimal cache-store capabilities used by snapshot readers and writers. */
 export interface SnapshotStore {
+  /** Read a cached JSON value; missing entries remain unavailable to the caller. */
   get(key: string, type: 'json'): Promise<unknown>;
+  /** Persist the cache entry using the supplied key and optional expiry policy. */
   put(
     key: string,
     value: string,
@@ -15,10 +23,12 @@ export interface SnapshotStore {
   ): Promise<unknown>;
 }
 
+/** Worker KV binding shape supported by the snapshot-store abstraction. */
 export type CloudflareSnapshotStore = KVNamespace extends SnapshotStore
   ? SnapshotStore
   : never;
 
+/** Runtime configuration variables resolved separately from storage bindings. */
 export interface WorkerVariables {
   CORS_ORIGINS?: string;
   HELIUS_API_KEY?: string;
@@ -32,6 +42,7 @@ export interface WorkerVariables {
   FIREBASE_PRIVATE_KEY?: string;
 }
 
+/** Bindings supplied to the Worker; provider credentials remain server-side. */
 export interface Env extends WorkerVariables {
   SNAPSHOTS: CloudflareSnapshotStore;
   REFRESH_TOKEN?: string;

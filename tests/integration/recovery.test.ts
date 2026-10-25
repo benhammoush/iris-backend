@@ -1,4 +1,9 @@
 /**
+ * Regression coverage and controlled fixtures for recovery.
+ * @packageDocumentation
+ */
+
+/**
  * Exercises recovery against retained KV records, rather than write counters.
  * All providers are stubbed; failures cannot consume live quota or modify shared data.
  */
@@ -43,7 +48,9 @@ function retainedStore(entries: [string, unknown][] = []) {
   const writes: string[] = [];
   let failKey: string | null = null;
   const kv: SnapshotStore = {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key) => records.get(key) ?? null,
+    /** Observe or simulate the cache write requested by this test. */
     put: async (key, value) => {
       writes.push(key);
       if (key === failKey) throw new Error('Injected KV write failure');
@@ -54,6 +61,7 @@ function retainedStore(entries: [string, unknown][] = []) {
     kv,
     records,
     writes,
+    /** Select the controlled failing cache operation for the recovery test. */
     fail: (key: string | null) => {
       failKey = key;
     },
@@ -76,6 +84,7 @@ function recoveryProvider(
         ? { ok: false, status: 400 }
         : {
             ok: true,
+            /** Return the controlled JSON payload for this provider-response fixture. */
             json: async () => [
               {
                 id: SOL_MINT,
@@ -90,10 +99,23 @@ function recoveryProvider(
     if (url.includes('/toptrending/') || url.includes('/tokens/v2/recent'))
       return failures.discovery
         ? { ok: false, status: 400 }
-        : { ok: true, json: async () => [] };
-    if (url.includes('/addresses/')) return { ok: true, json: async () => [] };
+        : {
+            ok: true,
+            /** Return the controlled JSON payload for this provider-response fixture. */
+            json: async () => [],
+          };
+    if (url.includes('/addresses/'))
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => [],
+      };
     if (url.includes('/parsed-events/'))
-      return { ok: true, json: async () => ({ data: [] }) };
+      return {
+        ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
+        json: async () => ({ data: [] }),
+      };
     const request = record(JSON.parse(options.body));
     const params = array(request.params);
     const sampleBlock =
@@ -110,6 +132,7 @@ function recoveryProvider(
     if (sampleBlock)
       return {
         ok: true,
+        /** Return the controlled JSON payload for this provider-response fixture. */
         json: async () => ({
           result: { blockTime: 1_760_000_000, signatures: ['new-signature'] },
         }),
@@ -126,6 +149,7 @@ function recoveryProvider(
     ];
     return {
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () =>
         known.includes(String(request.method))
           ? networkOnlyPayload(options)
@@ -192,7 +216,9 @@ test('a fresh network refresh cannot revive a transaction sample older than 24 h
   const env = testEnv({
     HELIUS_API_KEY: 'test-helius',
     SNAPSHOTS: {
+      /** Read the controlled cache or boundary value used by this assertion. */
       get: async () => cached,
+      /** Observe or simulate the cache write requested by this test. */
       put: async (key, value) => writes.set(key, JSON.parse(value)),
     },
   });
@@ -203,7 +229,11 @@ test('a fresh network refresh cannot revive a transaction sample older than 24 h
       record(array(request.params)[1]).transactionDetails === 'signatures'
     )
       return { ok: false, status: 400 };
-    return { ok: true, json: async () => networkOnlyPayload(options) };
+    return {
+      ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
+      json: async () => networkOnlyPayload(options),
+    };
   };
   try {
     const result = await loadHeliusDashboardSample(env, {}, now, true);
@@ -233,7 +263,10 @@ test('transaction fallback expires at its own exact boundary, even in a renewed 
         );
         const env = testEnv({
           HELIUS_API_KEY: 'test',
-          SNAPSHOTS: { get: async () => cached },
+          SNAPSHOTS: {
+            /** Read the controlled cache or boundary value used by this assertion. */
+            get: async () => cached,
+          },
         });
         const result = await loadHeliusDashboardSample(env, {}, now, true);
         assert.equal(
@@ -251,7 +284,12 @@ test('transaction fallback expires at its own exact boundary, even in a renewed 
       new Date(now.getTime() - STALE_AFTER_MS - 1).toISOString(),
     );
     const result = await loadHeliusDashboardSample(
-      testEnv({ SNAPSHOTS: { get: async () => cached } }),
+      testEnv({
+        SNAPSHOTS: {
+          /** Read the controlled cache or boundary value used by this assertion. */
+          get: async () => cached,
+        },
+      }),
       {},
       now,
     );
@@ -315,7 +353,12 @@ test('recent and dashboard caches enforce exact fresh/stale expiry and reject ma
     ] as const) {
       await t.test(`age ${age}ms`, async () => {
         const cached = dashboard(new Date(now.getTime() - age).toISOString());
-        const env = testEnv({ SNAPSHOTS: { get: async () => cached } });
+        const env = testEnv({
+          SNAPSHOTS: {
+            /** Read the controlled cache or boundary value used by this assertion. */
+            get: async () => cached,
+          },
+        });
         for (const load of [
           loadRecentTransactionSample,
           loadHeliusDashboardSample,
@@ -336,7 +379,12 @@ test('recent and dashboard caches enforce exact fresh/stale expiry and reject ma
       { ...dashboard(now.toISOString()), slot: '100' },
       { ...dashboard(now.toISOString()), transactions: {} },
     ]) {
-      const env = testEnv({ SNAPSHOTS: { get: async () => cached } });
+      const env = testEnv({
+        SNAPSHOTS: {
+          /** Read the controlled cache or boundary value used by this assertion. */
+          get: async () => cached,
+        },
+      });
       for (const load of [
         loadRecentTransactionSample,
         loadHeliusDashboardSample,
@@ -780,6 +828,7 @@ test('DefiLlama provider and write failures leave preceding cache readable until
     );
     fetchStub.fetch = async (url) => ({
       ok: true,
+      /** Return the controlled JSON payload for this provider-response fixture. */
       json: async () => (url.includes('/overview/') ? { protocols: [] } : []),
     });
     store.fail('defillama:v3:dashboard');
@@ -815,6 +864,7 @@ test('failed candle writes fall back to usable preceding candles, never expired 
   const original = fetchStub.fetch;
   fetchStub.fetch = async () => ({
     ok: true,
+    /** Return the controlled JSON payload for this provider-response fixture. */
     json: async () => ({
       success: true,
       data: {
@@ -837,7 +887,9 @@ test('failed candle writes fall back to usable preceding candles, never expired 
       { fetchedAt: 'invalid', candles: [] },
     ]) {
       const kv = {
+        /** Read the controlled cache or boundary value used by this assertion. */
         get: async () => cached,
+        /** Observe or simulate the cache write requested by this test. */
         put: async () => {
           throw new Error('Injected KV write failure');
         },

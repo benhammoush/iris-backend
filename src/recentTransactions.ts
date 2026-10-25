@@ -1,3 +1,8 @@
+/**
+ * Scoped recent-transaction sampling, retention and dashboard refresh.
+ * @packageDocumentation
+ */
+
 import {
   STALE_AFTER_MS,
   V3_HELIUS_DASHBOARD_KEY,
@@ -16,12 +21,14 @@ import { array, record, isRecord } from './record.ts';
 import type { Env } from './env.ts';
 import type { ProviderConfig as WorkerConfig } from './config.ts';
 
+/** Cached transaction observations with their sampling metadata. */
 interface Sample extends Record<string, unknown> {
   asOf: string;
   slot: number;
   transactions: unknown[];
 }
 
+/** Validate cached transaction sample structure before allowing reuse. */
 function usableSample(sample: unknown): sample is Sample {
   return (
     isRecord(sample) &&
@@ -32,6 +39,7 @@ function usableSample(sample: unknown): sample is Sample {
   );
 }
 
+/** Validate the dashboard-specific transaction sample before allowing reuse. */
 function usableDashboardSample(sample: unknown): sample is Sample {
   return (
     usableSample(sample) &&
@@ -87,6 +95,7 @@ async function precedingDashboard(env: Env, now: Date) {
   return { cached, age };
 }
 
+/** Extract supported transaction signatures from an RPC block response. */
 function signaturesFromBlock(value: unknown): string[] {
   const block = record(value);
   const signatures = Array.isArray(block?.signatures)
@@ -104,6 +113,7 @@ function signaturesFromBlock(value: unknown): string[] {
   ];
 }
 
+/** Classify a parsed event using supported provider fields. */
 function actionFromParsedEvent(event: unknown): string | null {
   const parsed = record(record(event).parsed);
   const type = record(parsed.summary).type;
@@ -119,6 +129,7 @@ function actionFromParsedEvent(event: unknown): string | null {
     : null;
 }
 
+/** Fetch bounded parsed transaction events from the configured provider. */
 async function parsedEvents(
   signatures: string[],
   apiKey: string,
@@ -139,6 +150,7 @@ async function parsedEvents(
       : [];
 }
 
+/** Refresh the recent-transaction sample and persist it only when requested. */
 async function recentSampleWork(
   env: Env,
   config: WorkerConfig,
@@ -213,6 +225,7 @@ async function recentSampleWork(
   return sample;
 }
 
+/** Refresh the dashboard sample while retaining independently usable previous metrics. */
 async function dashboardSampleWork(
   env: Env,
   config: WorkerConfig,
@@ -291,6 +304,7 @@ async function dashboardSampleWork(
   return sample;
 }
 
+/** Coalesce equivalent recent-transaction refreshes within the same binding and provider configuration. */
 export function refreshRecentTransactionSample(
   env: Env,
   config: WorkerConfig,
@@ -308,6 +322,7 @@ export function refreshRecentTransactionSample(
   );
 }
 
+/** Coalesce equivalent dashboard refreshes within the same binding and provider configuration. */
 export function refreshHeliusDashboardSample(
   env: Env,
   config: WorkerConfig,
@@ -324,6 +339,7 @@ export function refreshHeliusDashboardSample(
   );
 }
 
+/** Load dashboard data according to freshness, refresh and cache-only options. */
 export async function loadHeliusDashboardSample(
   env: Env,
   config: WorkerConfig,
@@ -361,6 +377,7 @@ export async function loadHeliusDashboardSample(
   };
 }
 
+/** Load recent transactions and refresh stale data only when the caller permits it. */
 export async function loadRecentTransactionSample(
   env: Env,
   config: WorkerConfig,

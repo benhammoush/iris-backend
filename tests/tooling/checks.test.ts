@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for checks.
+ * @packageDocumentation
+ */
+
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';

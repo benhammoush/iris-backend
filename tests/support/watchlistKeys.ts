@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for watchlist keys.
+ * @packageDocumentation
+ */
+
 // Public, deliberately committed test-only key pair. Never a deployed credential.
 export const privateKey = `-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQD259n0OwlD33nk

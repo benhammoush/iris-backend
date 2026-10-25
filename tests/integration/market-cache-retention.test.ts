@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for market cache retention.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,6 +48,7 @@ test('dev routes retain old market data and original timestamps without renewing
     const env = testEnv({
       RETAIN_STALE_MARKET_DATA: flag,
       SNAPSHOTS: {
+        /** Read the controlled cache or boundary value used by this assertion. */
         get: async (key) => {
           if (key === SNAPSHOT_POINTER_KEY) return { key: 'old-snapshot' };
           if (key === 'old-snapshot') return oldSnapshot;
@@ -95,6 +101,7 @@ test('retention still rejects missing, malformed and future-dated records', asyn
     },
   ]) {
     const cache = {
+      /** Read the controlled cache or boundary value used by this assertion. */
       get: async (key: string) =>
         key === SNAPSHOT_POINTER_KEY ? { key: 'test' } : value,
     };
@@ -110,8 +117,16 @@ test('retention still rejects missing, malformed and future-dated records', asyn
     },
   ]) {
     assert.equal(
-      (await loadDefiLlamaDashboard({ get: async () => value }, now, true))
-        .state,
+      (
+        await loadDefiLlamaDashboard(
+          {
+            /** Read the controlled cache or boundary value used by this assertion. */
+            get: async () => value,
+          },
+          now,
+          true,
+        )
+      ).state,
       'unavailable',
     );
   }
@@ -140,7 +155,9 @@ test('authenticated refresh persists dev market caches without TTL and preserves
       REFRESH_TOKEN: 'test-token',
       RETAIN_STALE_MARKET_DATA: flag,
       SNAPSHOTS: {
+        /** Read the controlled cache or boundary value used by this assertion. */
         get: async (key) => records.get(key) ?? null,
+        /** Observe or simulate the cache write requested by this test. */
         put: async (key, value, options) => {
           records.set(key, JSON.parse(value));
           writes.push({ key, ...options });

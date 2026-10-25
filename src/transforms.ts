@@ -1,7 +1,13 @@
+/**
+ * Exact atomic-quantity operations and canonical Solana asset identity.
+ * @packageDocumentation
+ */
+
 import { CHAIN, SOL_MINT } from './constants.ts';
 
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
+/** Validate the base58 alphabet and decoded public-key length at the input boundary. */
 export function isBase58PublicKey(value: unknown): value is string {
   if (
     typeof value !== 'string' ||
@@ -28,6 +34,7 @@ export function isBase58PublicKey(value: unknown): value is string {
   return leadingZeroes + encodedBytes === 32;
 }
 
+/** Format an exact atomic quantity at the supplied decimal precision, or return null for invalid input. */
 export function formatAtomicAmount(
   rawAmount: unknown,
   decimals: unknown,
@@ -47,6 +54,7 @@ export function formatAtomicAmount(
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
+/** Sum supported atomic quantities exactly with bigint arithmetic, or return null for invalid input. */
 export function addAtomicAmounts(
   amounts: readonly (string | number | bigint | boolean)[],
 ): string | null {
@@ -59,6 +67,7 @@ export function addAtomicAmounts(
   }
 }
 
+/** Convert a display decimal only when its precision can be represented safely for valuation. */
 export function decimalValue(value: unknown): number | null {
   if (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value)) return null;
   // A portfolio value must not silently round an amount that cannot be represented safely.
@@ -67,6 +76,7 @@ export function decimalValue(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** Build canonical Solana asset identifiers and the native-asset flag from the mint. */
 export function assetIdentity(mint: string) {
   return {
     chain: CHAIN,

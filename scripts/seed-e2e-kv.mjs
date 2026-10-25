@@ -1,3 +1,8 @@
+/**
+ * Seed deterministic data into the isolated local end-to-end KV environment.
+ * @file
+ */
+
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -25,6 +30,7 @@ const wrangler = join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const walletAddress = '7Yk4L5M6N7P8Q9R2tB6dF8gH1jK4L5M6N7P8Q9R2tB6d';
 const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
+/** Build deterministic asset fixture data for the isolated test environment. */
 function asset(mint, symbol, name, decimals, priceUsd, marketCapUsd) {
   return {
     mint,
@@ -50,6 +56,7 @@ function asset(mint, symbol, name, decimals, priceUsd, marketCapUsd) {
   };
 }
 
+/** Build a deterministic candle fixture with the requested observation time. */
 function candle(timestamp, closeUsd) {
   return {
     timestamp,
@@ -62,6 +69,7 @@ function candle(timestamp, closeUsd) {
   };
 }
 
+/** Build the deterministic records needed by the isolated test fixture. */
 function records(now) {
   const sol = asset(SOL_MINT, 'SOL', 'Solana', 9, 150.25, 75_000_000_000);
   const usdc = asset(usdcMint, 'USDC', 'USD Coin', 6, 1, 61_000_000_000);
@@ -162,6 +170,7 @@ function records(now) {
       complete: false,
     },
   };
+  /** Build a deterministic transaction-event fixture. */
   const event = (id, amount) => ({
     id,
     timestamp: now,

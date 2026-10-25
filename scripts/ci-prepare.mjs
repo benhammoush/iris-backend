@@ -1,4 +1,6 @@
-/** Package the selected target without provider credentials or deployment. @file */
+/** Package the selected target without provider credentials or deployment.
+ * @file
+ */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 

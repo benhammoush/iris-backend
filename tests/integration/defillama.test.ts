@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for defillama.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { record } from '../../src/record.ts';
@@ -92,6 +97,7 @@ test('refresh normalizes, filters, sorts, and caches Solana DefiLlama data', asy
   try {
     const dashboard = await refreshDefiLlamaDashboard(
       {
+        /** Observe or simulate the cache write requested by this test. */
         put: async (key, value, options) => writes.set(key, { value, options }),
       },
       new Date('2026-10-06T00:00:00.000Z'),
@@ -125,7 +131,10 @@ test('load marks stale caches and rejects expired data', async () => {
     dexes: { total24hUsd: 1, total7dUsd: 1, items: [] },
     protocols: { total: 0, items: [] },
   };
-  const kv = { get: async () => cached };
+  const kv = {
+    /** Read the controlled cache or boundary value used by this assertion. */
+    get: async () => cached,
+  };
   assert.equal(
     (await loadDefiLlamaDashboard(kv, Date.parse('2026-10-06T00:16:00.000Z')))
       .state,

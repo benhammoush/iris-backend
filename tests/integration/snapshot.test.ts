@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for snapshot.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FIXTURE_SNAPSHOT } from '../../src/fixtures.ts';
@@ -9,13 +14,16 @@ import {
 
 const now = Date.parse('2026-10-02T12:00:00.000Z');
 
+/** Create an isolated in-memory cache fixture. */
 function kv(snapshot: unknown) {
   return {
+    /** Read the controlled cache or boundary value used by this assertion. */
     get: async (key: string) =>
       key === 'snapshot:current' ? { key: 'snapshot:v1:test' } : snapshot,
   };
 }
 
+/** Build the controlled stored snapshot used by the test. */
 function snapshot(createdAt: string) {
   return {
     createdAt,
@@ -52,7 +60,13 @@ test('snapshot resolver distinguishes fresh, stale, and fixture data at exact bo
 
 test('snapshot resolver rejects malformed pointers and future snapshots', async () => {
   for (const pointer of [null, {}, { key: 42 }, { key: '' }]) {
-    const resolved = await resolveSnapshot({ get: async () => pointer }, now);
+    const resolved = await resolveSnapshot(
+      {
+        /** Read the controlled cache or boundary value used by this assertion. */
+        get: async () => pointer,
+      },
+      now,
+    );
     assert.equal(resolved.state, 'fixture');
     assert.strictEqual(resolved.snapshot, FIXTURE_SNAPSHOT);
   }

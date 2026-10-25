@@ -1,3 +1,8 @@
+/**
+ * Regression coverage and controlled fixtures for market boundaries.
+ * @packageDocumentation
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fetchCandles, mapV3Asset, refreshMarket } from '../../src/market.ts';
