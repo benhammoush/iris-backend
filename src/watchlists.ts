@@ -9,6 +9,7 @@ import { error, json } from './http.ts';
 import { PrivateError } from './privateError.ts';
 import { isBase58PublicKey } from './transforms.ts';
 import { privateRateLimit } from './privateRateLimit.ts';
+import { accountDeletion } from './accountDeletion.ts';
 
 /** Minimal request fields accepted by the private watchlist route. */
 interface PrivateRequest {
@@ -37,10 +38,15 @@ export async function watchlistRoute(
       url.pathname,
     );
     const list = url.pathname === '/v3/me/watchlist';
-    if (!list && !match) throw new PrivateError('NOT_FOUND', 404);
+    const account = url.pathname === '/v3/me/account';
+    const deletionStatus = url.pathname === '/v3/me/account/deletion';
+    if (!list && !match && !account && !deletionStatus)
+      throw new PrivateError('NOT_FOUND', 404);
     if (
       (list && request.method !== 'GET') ||
-      (match && !['PUT', 'DELETE'].includes(request.method))
+      (match && !['PUT', 'DELETE'].includes(request.method)) ||
+      (account && request.method !== 'DELETE') ||
+      (deletionStatus && request.method !== 'GET')
     )
       throw new PrivateError('METHOD_NOT_ALLOWED', 405);
     if (
@@ -81,6 +87,15 @@ export async function watchlistRoute(
       env,
       `ip:${request.headers.get('cf-connecting-ip') ?? 'unknown'}`,
     );
+    if (account || deletionStatus) {
+      const result = await accountDeletion(request, env, deletionStatus);
+      return json(
+        { data: result.data, meta: { requestId: id } },
+        result.status,
+        id,
+        origin,
+      );
+    }
     const uid = await authenticateFirebase(request, env);
     if (match && !isBase58PublicKey(match[2]))
       throw new PrivateError('INVALID_WATCHLIST_ITEM', 400);

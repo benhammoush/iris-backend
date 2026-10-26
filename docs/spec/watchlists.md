@@ -11,9 +11,9 @@ contract for implemented API behavior. The former board is historical reference.
 ## WL-1 local implementation
 
 Worker 3.16.0 adds list/save/remove routes and `migrations/0001_watchlists.sql`.
-Account deletion/status receipts, cleanup jobs, browser accounts and save controls
-remain later WL-2–5 work; their descriptions below are requirements, not delivered
-features. No hosted bindings, secrets, authentication projects, database resources
+Browser accounts and save controls were delivered separately by WL-2/3. WL-4's
+local deletion implementation is described below; hosted lifecycle acceptance
+remains pending. No hosted bindings, secrets, authentication projects, database resources
 or cleanup schedules were created. `WATCHLIST_ENABLED` is unset everywhere.
 
 Private routes fail closed unless explicitly enabled with all of:
@@ -47,6 +47,56 @@ pinned to the versions already used transitively by the existing Wrangler.
 
 Do not enable hosted watchlists until lifecycle, privacy and dev acceptance gates
 below are satisfied. WL-1 alone does not make permanent account deletion available.
+
+## WL-4 local implementation
+
+Worker 3.17.0 adds the two account routes in `openapi.yaml`, the additive
+`migrations/0002_account_deletion.sql`, and durable cleanup in `src/accountDeletion.ts`.
+Apply both migrations to a separately approved isolated D1 before enabling this
+feature. No database migration, resource provisioning or schedule activation is
+performed by this implementation.
+
+- Acceptance needs a current Firebase identity (unverified email is allowed),
+  `auth_time` no older than five minutes, and `X-Iris-Confirm-Deletion: permanent`.
+  A D1 batch marks the account deleting, records the job, and purges live references.
+  No Firebase deletion happens before that commit. A 202 means accepted, not completed.
+- `WATCHLIST_CLEANUP_ENABLED=true` is additionally required to accept deletion.
+  This flag is unset in all checked-in environments. It does not prove a schedule
+  exists: WL-O1 must provision and observe the dedicated `17 * * * *` cleanup Cron
+  before setting it. This Cron dispatches only cleanup, never market refreshes;
+  existing market schedules are unchanged. Cleanup is independent of private
+  request enablement so disabling browser traffic need not strand pending jobs.
+- Configure `WATCHLIST_RECEIPT_KEY` as a separate environment-specific Worker
+  secret containing at least 32 cryptographically random bytes encoded base64url.
+  Never reuse provider keys, service-account keys or keys from another environment.
+  The HS256 receipt is scoped by project, audience and purpose; it contains a random
+  lifecycle ID, not a Firebase UID. Send it as `Authorization: Deletion <receipt>`
+  only to account status/repeat-deletion routes. No query-string receipts.
+  Expiry is fixed at one hour from acceptance, including repeated requests; no
+  cancellation or renewal is available. Keep the signing key stable for that hour;
+  rotating/removing it invalidates outstanding receipts but never cancels cleanup.
+- Each scheduled pass durably leases at most ten due jobs for five minutes and
+  checks at most ten active accounts in least-recently-checked order. All provider
+  requests have five-second deadlines. Jobs use fresh privileged lookup and delete
+  operations without browser tokens. Only a successful empty lookup or successful
+  deletion permits completion. Ambiguous errors leave the job deleting; retries
+  first look up the UID, so Firebase success followed by a D1 completion failure
+  is recoverable without restoring private data.
+- Retry metadata (`attempts`, `next_attempt_at`) is durable in D1. Backoff starts
+  at two minutes and caps at one day; counts cap at one million, not retries.
+  A failed pass emits a sanitized `account-cleanup` failure and fails the invocation.
+  WL-O1 must set monitoring/ownership for failing invocations and overdue jobs,
+  verify throughput against account quotas, and adjust deployment capacity through
+  separate approval. No UID, address, token or raw provider failure is logged.
+- Orphan checks purge only on confirmed Firebase absence, in a batch that also
+  blocks concurrent saves. Network, permission and malformed responses retain data.
+  At most 100 completed markers older than 31 days are purged per pass. Pending
+  jobs never age out. Delays in the schedule can extend metadata retention; hosted
+  acceptance must demonstrate the intended retention and cleanup lag.
+
+Local workerd/D1 and browser tests intercept all Firebase calls. They create no
+real users and do not prove hosted IAM, Cron reliability, provider retention or
+real lifecycle completion. WL-O1 and WL-5 remain separate activation gates.
 
 ## Product scope
 

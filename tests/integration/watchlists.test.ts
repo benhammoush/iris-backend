@@ -426,8 +426,8 @@ void test('workerd private routes enforce identity, real D1 constraints and publ
         assert.equal((await call('/v3/assets', 'PUT')).status, 405);
         assert.equal(
           (await call('/v3/me/account', 'DELETE')).status,
-          404,
-          'WL-4 is not exposed',
+          503,
+          'WL-4 requires separately enabled cleanup configuration',
         );
         const privateCors = await call('/v3/me/watchlist', 'OPTIONS');
         assert.match(

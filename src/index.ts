@@ -13,6 +13,7 @@ import type { Env } from './env.ts';
 import { errorMessage } from './record.ts';
 import { diagnostic, unavailable, refreshDiagnostic } from './diagnostics.ts';
 import { watchlistRoute } from './watchlists.ts';
+import { cleanupAccounts, CLEANUP_CRON } from './accountDeletion.ts';
 
 /** Request boundary accepted by the Worker routing implementation. */
 interface WorkerRequest {
@@ -101,8 +102,9 @@ const worker = {
           'access-control-allow-methods': privatePath
             ? 'GET, PUT, DELETE, OPTIONS'
             : 'GET, POST, OPTIONS',
-          'access-control-allow-headers':
-            'content-type, x-request-id, authorization',
+          'access-control-allow-headers': privatePath
+            ? 'content-type, x-request-id, authorization, x-iris-confirm-deletion'
+            : 'content-type, x-request-id, authorization',
           'access-control-max-age': '86400',
           'x-request-id': id,
         },
@@ -189,6 +191,15 @@ const worker = {
     env: Env,
     _ctx?: unknown,
   ): Promise<void> {
+    if (
+      _event &&
+      typeof _event === 'object' &&
+      'cron' in _event &&
+      _event.cron === CLEANUP_CRON
+    ) {
+      await refreshDiagnostic('account-cleanup', () => cleanupAccounts(env));
+      return;
+    }
     await refreshDiagnostic('scheduled-refresh', async () => {
       const config = getConfig(env);
       await Promise.all([

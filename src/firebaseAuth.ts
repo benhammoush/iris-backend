@@ -93,9 +93,12 @@ async function boundedJson(url: string, init?: RequestInit) {
     bytes.set(chunk, offset);
     offset += chunk.length;
   }
+  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw unavailable();
   return {
     response,
-    data: record(JSON.parse(new TextDecoder().decode(bytes)) as unknown),
+    data: record(parsed),
   };
 }
 
@@ -159,6 +162,20 @@ export async function authenticateFirebase(
   request: HeaderRequest,
   env: Env,
 ): Promise<string> {
+  return (await firebaseIdentity(request, env)).uid;
+}
+
+/** Verify identity, revocation and current account status for a private operation.
+ * @param request - Firebase bearer credential, never a deletion receipt.
+ * @param env - Environment-specific authentication configuration.
+ * @param deleting - Allow unverified email and require authentication within five minutes.
+ * @returns Verified UID and authentication time, after a fresh privileged lookup.
+ */
+export async function firebaseIdentity(
+  request: HeaderRequest,
+  env: Env,
+  deleting = false,
+): Promise<{ uid: string; authTime: number }> {
   const authorization = request.headers.get('authorization');
   if (!authorization) throw new PrivateError('AUTH_REQUIRED', 401);
   if (
@@ -248,23 +265,8 @@ export async function authenticateFirebase(
     throw invalid();
   try {
     await privateRateLimit(env, `uid:${payload.sub}`);
-    const adminToken = await accessToken(env, cache);
-    const { data } = await boundedJson(
-      `https://identitytoolkit.googleapis.com/v1/projects/${project}/accounts:lookup`,
-      {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${adminToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ localId: [payload.sub] }),
-      },
-    );
-    if (!Array.isArray(data.users)) throw unavailable();
-    if (!data.users.length) throw invalid();
-    if (data.users.length !== 1) throw unavailable();
-    const user = record(data.users[0]);
-    if (user.localId !== payload.sub) throw unavailable();
+    const user = await lookupFirebaseAccount(env, payload.sub);
+    if (!user) throw invalid();
     if (user.disabled === true) throw invalid();
     if (user.disabled !== undefined && typeof user.disabled !== 'boolean')
       throw unavailable();
@@ -272,11 +274,79 @@ export async function authenticateFirebase(
       user.validSince === undefined ? 0 : Number(user.validSince);
     if (!Number.isFinite(validSince) || validSince < 0) throw unavailable();
     if (payload.auth_time < validSince) throw invalid();
-    if (user.emailVerified !== true)
+    if (deleting && now - payload.auth_time > 300)
+      throw new PrivateError('REAUTHENTICATION_REQUIRED', 403);
+    if (!deleting && user.emailVerified !== true)
       throw new PrivateError('EMAIL_VERIFICATION_REQUIRED', 403);
-    return payload.sub;
+    return { uid: payload.sub, authTime: payload.auth_time };
   } catch (cause) {
     if (cause instanceof PrivateError) throw cause;
     throw unavailable();
   }
+}
+
+/** Call only the fixed privileged Firebase endpoint for this environment.
+ * @param env - Server-only service identity and exact project.
+ * @param operation - Allowlisted privileged operation.
+ * @param localId - UID or lookup UID array, never a browser bearer token.
+ * @returns Bounded successful JSON; all upstream errors remain unavailable.
+ */
+async function firebaseAdmin(
+  env: Env,
+  operation: 'lookup' | 'delete',
+  localId: string | string[],
+) {
+  const project = env.FIREBASE_PROJECT_ID;
+  if (!project || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project))
+    throw unavailable();
+  const token = await accessToken(env, cacheFor(env));
+  const { data } = await boundedJson(
+    `https://identitytoolkit.googleapis.com/v1/projects/${project}/accounts:${operation}`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ localId }),
+    },
+  );
+  return data;
+}
+
+/** Look up one UID without confusing upstream failure with confirmed absence.
+ * @param env - Isolated Firebase project and privileged lookup identity.
+ * @param uid - Server-derived account identity.
+ * @returns The exact matching account, or null on a successful empty lookup only.
+ */
+export async function lookupFirebaseAccount(env: Env, uid: string) {
+  const data = await firebaseAdmin(env, 'lookup', [uid]);
+  // Google may omit the repeated users field when no account matches.
+  if (
+    data.users === undefined &&
+    Object.keys(data).every((key) => key === 'kind') &&
+    (data.kind === undefined ||
+      data.kind === 'identitytoolkit#GetAccountInfoResponse')
+  )
+    return null;
+  if (!Array.isArray(data.users)) throw unavailable();
+  if (!data.users.length) return null;
+  if (data.users.length !== 1) throw unavailable();
+  const user = record(data.users[0]);
+  if (user.localId !== uid) throw unavailable();
+  return user;
+}
+
+/** Delete a durable job's UID; ambiguous failures must be retried via lookup.
+ * @param env - Environment-specific service identity with deletion permission.
+ * @param uid - UID from committed cleanup work, never from browser input.
+ */
+export async function deleteFirebaseAccount(env: Env, uid: string) {
+  const data = await firebaseAdmin(env, 'delete', uid);
+  if (
+    !Object.keys(data).every((key) => key === 'kind') ||
+    (data.kind !== undefined &&
+      data.kind !== 'identitytoolkit#DeleteAccountResponse')
+  )
+    throw unavailable();
 }
