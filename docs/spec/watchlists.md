@@ -119,7 +119,8 @@ real lifecycle completion. WL-O1 and WL-5 remain separate activation gates.
   permanent; saving again creates a new timestamp. Pending/error states are
   visible and never silently report a failed mutation as successful.
 - Owner-approved WL-3 revision, 2026-10-22: wallet rows automatically load public
-  balance/holding summaries through the Worker, with at most four concurrent reads,
+  balance/holding summaries through the Worker. Owner-approved revision, 2026-10-26:
+  load one wallet at a time instead of four concurrent reads, with
   per-row loading/failure states and no activity requests until wallet detail entry.
   This replaces the earlier address-only/no-wallet-provider-work rule. Asset rows
   use the existing loaded Jupiter catalog. Owner-approved compact rows show asset
@@ -326,13 +327,14 @@ read and up to 40 distinct Jupiter mint lookups per wallet. Each read can attemp
 twice, so the worst-case request budgets are **2 Helius + 80 Jupiter attempts per
 wallet**, or **200 Helius + 8,000 Jupiter attempts per 100-wallet refresh**. Cache
 hits/single-flight may reduce usage; they are not a guaranteed quota reduction.
-Four concurrent wallet reads nominally schedule four Helius or 20 Jupiter requests
-in flight per page, not a global limit. Twenty is not a guaranteed failure-path
-ceiling: `mapWithConcurrency` can reject before its other mint workers finish,
-and `refreshMarket` can return a partial wallet while those workers continue. The
-next wallet can then overlap surviving enrichment work. Activation acceptance must
-bound that overlap by cancelling or draining failed enrichment before releasing
-its scheduling slot, rather than treating nominal concurrency as enforced usage.
+Sequential wallet summaries schedule one Helius read followed by at most five
+concurrent Jupiter mint reads within that wallet. Worker 3.18.0 stops queued mint
+work on the first terminal failure and drains already dispatched mint workers
+before returning a partial wallet. Frontend 1.26.1 waits for that response before
+starting another wallet, and stops the remaining queue on surfaced provider or
+transport failures, including typed stops in successful partial responses.
+This is per active page batch, not a global limit: multiple users/tabs and work
+already dispatched by an aborted/superseded page can still overlap.
 The attempt ceilings above are not accepted hosted allowances. Before activation,
 WL-O1 must approve explicit per-provider attempt budgets per refresh and shared
 rate limits against actual account quotas, counting retries and mint fanout;
@@ -352,12 +354,17 @@ Already dispatched requests may finish within their bounds; no automatic new
 batch may bypass a stop signal or accepted shared budget. Provider signals must
 contain no credentials or raw upstream bodies.
 
-This documentation PR defines the acceptance requirement, not its implementation:
-today `refreshMarket` can swallow Jupiter failures and return a partial wallet
-without a typed stop signal. Existing frontend queue stopping covers surfaced
-Worker failures only. Provider budget enforcement and end-to-end stop propagation
-need separate implementation/acceptance before hosted activation. Helius/Jupiter
-quota and provider logging/privacy acceptance remain WL-O1 gates.
+Worker 3.18.0 returns `meta.providerStop` for terminal Jupiter enrichment failures,
+with provider `jupiter` and reason `throttled` (429) or `unavailable` (other failures).
+Valid DAS balances remain visible with unpriced holdings. Failure-bearing partial
+responses are not written to the wallet cache, so a later explicit retry can recover.
+Ordinary missing prices are not provider failures. Market/snapshot callers retain
+their existing null-fallback behavior; only the v3 wallet opts into propagation.
+Helius failures still surface as HTTP 503 and stop the frontend queue; typed Helius
+failure details and enforced provider budgets remain separate work. The contract
+reserves `budget-exhausted` but this change does not enforce or select any budget.
+Local tests do not establish hosted allowances or activation. Helius/Jupiter quota
+and provider logging/privacy acceptance remain WL-O1 gates.
 
 ## Acceptance and handoff
 

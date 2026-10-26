@@ -1,6 +1,6 @@
 {
   "name": "iris-backend",
-  "version": "3.17.0",
+  "version": "3.18.0",
   "description": "Iris market and curated-wallet API on Cloudflare Workers",
   "type": "module",
   "main": "src/index.ts",

@@ -48,6 +48,31 @@ function envelope(data: unknown) {
   return { data, meta: { requestId: 'contract-test' } };
 }
 
+void test('provider stop metadata accepts only the controlled provider/reason contract', () => {
+  const validate = validator('Meta');
+  for (const provider of ['helius', 'jupiter']) {
+    for (const reason of ['throttled', 'unavailable', 'budget-exhausted']) {
+      assert.equal(
+        validate({ requestId: 'test', providerStop: { provider, reason } }),
+        true,
+      );
+    }
+  }
+  for (const providerStop of [
+    null,
+    {},
+    { provider: 'unknown', reason: 'throttled' },
+    { provider: 'jupiter', reason: 'unknown' },
+    {
+      provider: 'jupiter',
+      reason: 'unavailable',
+      raw: 'private provider body',
+    },
+  ]) {
+    assert.equal(validate({ requestId: 'test', providerStop }), false);
+  }
+});
+
 void test('canonical fixture and unavailable responses match their declared envelopes', async () => {
   const env: Env = {
     PROVIDER_MODE: 'cache-only',

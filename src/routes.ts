@@ -1031,6 +1031,9 @@ export async function route(
           meta: {
             ...v3Meta(meta),
             wallet: { source: 'helius-das', ...result.freshness },
+            ...(result.providerStop
+              ? { providerStop: result.providerStop }
+              : {}),
           },
         },
         200,

@@ -17,7 +17,7 @@ import {
   V3_WALLET_KEY_PREFIX,
 } from './constants.ts';
 import { refreshMarket } from './market.ts';
-import { providerJson } from './providerRequest.ts';
+import { ProviderRequestError, providerJson } from './providerRequest.ts';
 import { singleFlight, providerKey } from './singleFlight.ts';
 import { decimalValue, formatAtomicAmount } from './transforms.ts';
 import { array, record, isRecord, scalarText } from './record.ts';
@@ -912,13 +912,23 @@ async function walletWork(
     .slice(0, 40);
   if (!mints.includes(SOL_MINT)) mints.unshift(SOL_MINT);
   let market = null;
+  let providerStop:
+    { provider: 'jupiter'; reason: 'throttled' | 'unavailable' } | undefined;
   try {
     market = await marketRefresh(
       config.jupiterApiKey || env.JUPITER_API_KEY,
       mints.slice(0, 40),
+      true,
     );
   } catch (cause) {
     unavailable('wallet-enrichment', 'Jupiter', cause);
+    providerStop = {
+      provider: 'jupiter',
+      reason:
+        cause instanceof ProviderRequestError && cause.status === 429
+          ? 'throttled'
+          : 'unavailable',
+    };
   }
   const wallet = mapDasWallet(
     address,
@@ -926,11 +936,11 @@ async function walletWork(
     (market?.assets || []).map(v3Asset),
   );
   const asOf = new Date().toISOString();
-  if (env.SNAPSHOTS?.put)
+  if (env.SNAPSHOTS?.put && !providerStop)
     await env.SNAPSHOTS.put(key, JSON.stringify({ wallet, asOf }), {
       expirationTtl: V3_WALLET_CACHE_SECONDS,
     });
-  return { wallet, freshness: { cacheState: 'miss', asOf } };
+  return { wallet, freshness: { cacheState: 'miss', asOf }, providerStop };
 }
 
 /** Normalize an exact atomic quantity without a lossy floating-point conversion.

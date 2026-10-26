@@ -1073,6 +1073,83 @@ void test('v3 wallet propagates DAS failures before attempting Jupiter enrichmen
   }
 });
 
+for (const status of [429, 500, 503]) {
+  void test(`wallet HTTP response retains balances and a typed Jupiter stop on ${status}, without caching the failure`, async () => {
+    const originalFetch = fetchStub.fetch;
+    const writes: string[] = [];
+    let failed = true;
+    fetchStub.fetch = (url) => {
+      if (url.includes('helius-rpc.com'))
+        return Response.json({
+          result: {
+            nativeBalance: { lamports: '9007199254740993123' },
+            items: [],
+          },
+        });
+      if (failed)
+        return new Response('private upstream details', {
+          status,
+          headers: { 'retry-after': '60' },
+        });
+      return Response.json([{ id: SOL_MINT, usdPrice: 100, decimals: 9 }]);
+    };
+    const bindings = env({
+      HELIUS_API_KEY: 'h-secret',
+      JUPITER_API_KEY: 'j-secret',
+      SNAPSHOTS: {
+        /** Record cache publication without external persistence.
+         * @param key - Wallet cache identity being published.
+         * @returns Completion after capturing the write.
+         */
+        put: (key) => {
+          writes.push(key);
+          return Promise.resolve();
+        },
+      },
+    });
+    try {
+      const first = await worker.fetch(
+        new Request(`https://api.example/v3/wallets/${SOL_MINT}`),
+        bindings,
+        {},
+      );
+      assert.equal(first.status, 200);
+      assert.equal(first.headers.get('cache-control'), 'no-store');
+      const body =
+        await responseJson<ResourceEnvelope<Record<string, unknown>>>(first);
+      assert.deepEqual(body.meta.providerStop, {
+        provider: 'jupiter',
+        reason: status === 429 ? 'throttled' : 'unavailable',
+      });
+      assert.equal(
+        record(array(body.data.balances)[0]).atomicAmount,
+        '9007199254740993123',
+      );
+      assert.equal(record(body.data.valuation).complete, false);
+      assert.doesNotMatch(
+        JSON.stringify(body),
+        /h-secret|j-secret|private upstream details/,
+      );
+      assert.equal(writes.length, 0);
+      failed = false;
+      const second = await worker.fetch(
+        new Request(`https://api.example/v3/wallets/${SOL_MINT}`),
+        bindings,
+        {},
+      );
+      const recovered =
+        await responseJson<ResourceEnvelope<Record<string, unknown>>>(second);
+      assert.equal(recovered.meta.providerStop, undefined);
+      assert.equal(record(array(recovered.data.balances)[0]).priceUsd, 100);
+      // Exact quantities beyond the valuation precision limit stay unpriced even after recovery.
+      assert.equal(record(recovered.data.valuation).complete, false);
+      assert.equal(writes.length, 1);
+    } finally {
+      fetchStub.fetch = originalFetch;
+    }
+  });
+}
+
 void test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibility', async () => {
   const originalFetch = fetchStub.fetch;
   const writes: { key: string; value: string }[] = [];

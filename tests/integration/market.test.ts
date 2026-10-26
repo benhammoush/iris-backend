@@ -5,6 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ProviderRequestError } from '../../src/providerRequest.ts';
 import { MAX_CATALOG_ASSETS, SOL_MINT } from '../../src/constants.ts';
 import {
   CANDLE_TIMEFRAMES,
@@ -101,6 +102,49 @@ void test('market refresh preserves missing provider values as null', async () =
 
 void test('market refresh falls back when no Jupiter key is configured', async () => {
   assert.equal(await refreshMarket(undefined), null);
+});
+
+void test('failed mint enrichment stops queued work and drains dispatched workers before rejecting', async () => {
+  const originalFetch = globalThis.fetch;
+  const releases: ((response: Response) => void)[] = [];
+  const mints = Array.from({ length: 12 }, (_, index) => `Mint${index}`);
+  globalThis.fetch = () =>
+    new Promise<Response>((resolve) => releases.push(resolve));
+  try {
+    let settled = false;
+    const pending = refreshMarket('test-key', mints, true).finally(() => {
+      settled = true;
+    });
+    const rejected = assert.rejects(
+      pending,
+      (cause: unknown) =>
+        cause instanceof ProviderRequestError &&
+        cause.provider === 'Jupiter' &&
+        cause.status === 500,
+    );
+    assert.equal(releases.length, 5);
+    releases[0](new Response(null, { status: 500 }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(settled, false);
+    assert.equal(releases.length, 5);
+    for (const release of releases.slice(1)) release(Response.json([]));
+    await rejected;
+    assert.equal(settled, true);
+    assert.equal(releases.length, 5);
+  } finally {
+    for (const release of releases) release(Response.json([]));
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test('market catalog callers retain their null fallback on provider failure', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve(new Response(null, { status: 500 }));
+  try {
+    assert.equal(await refreshMarket('test-key', [SOL_MINT]), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 void test('discovery catalogs use Jupiter Trending and Recent endpoints', async () => {
