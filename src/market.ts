@@ -55,17 +55,23 @@ async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
-  /** Drain queued items while respecting the shared concurrency limit. */
+  let failure: { cause: unknown } | undefined;
+  /** Stop dequeuing on failure, but let already dispatched operations settle. */
   async function worker() {
-    while (nextIndex < items.length) {
+    while (nextIndex < items.length && !failure) {
       const index = nextIndex;
       nextIndex += 1;
-      results[index] = await operation(items[index]);
+      try {
+        results[index] = await operation(items[index]);
+      } catch (cause) {
+        failure ??= { cause };
+      }
     }
   }
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, worker),
   );
+  if (failure) throw failure.cause;
   return results;
 }
 
@@ -238,11 +244,13 @@ function catalogTokens(tokens: Record<string, unknown>[], verifiedOnly = true) {
 /** Refresh bounded market discovery and normalize available asset metrics.
  * @param apiKey - Optional server-only Jupiter credential; absent credentials disable refresh.
  * @param candidateMints - Optional explicit mint list to resolve with bounded concurrency.
+ * @param propagateFailure - Whether the wallet caller needs provider failures instead of a null fallback.
  * @returns Available normalized market data, or null on unavailable configuration/provider work.
  */
 export async function refreshMarket(
   apiKey?: string,
   candidateMints: string[] | null = null,
+  propagateFailure = false,
 ) {
   if (!apiKey) return null;
   try {
@@ -281,6 +289,7 @@ export async function refreshMarket(
     };
   } catch (cause) {
     unavailable('market-refresh', 'Jupiter', cause);
+    if (propagateFailure) throw cause;
     return null;
   }
 }

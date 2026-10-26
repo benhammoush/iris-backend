@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Iris API
-  version: 3.17.0
+  version: 3.18.0
   license:
     name: ISC
     identifier: ISC
@@ -1026,11 +1026,20 @@ components:
       required: [data, meta]
       properties: { data: {}, meta: { $ref: '#/components/schemas/Meta' } }
     Meta:
-      {
-        type: object,
-        required: [requestId],
-        properties: { requestId: { type: string } },
-      }
+      type: object
+      required: [requestId]
+      properties:
+        requestId: { type: string }
+        providerStop: { $ref: '#/components/schemas/ProviderStop' }
+    ProviderStop:
+      type: object
+      additionalProperties: false
+      required: [provider, reason]
+      description: Stop queued provider work even when the response retains usable partial wallet balances. Absence does not guarantee all holdings are priced. Budget exhaustion is reserved for separately approved budget enforcement.
+      properties:
+        provider: { type: string, enum: [helius, jupiter] }
+        reason:
+          { type: string, enum: [throttled, unavailable, budget-exhausted] }
     ErrorEnvelope:
       type: object
       required: [error]
