@@ -8,6 +8,7 @@
 const operations = new Set([
   'http-request',
   'scheduled-refresh',
+  'account-cleanup',
   'authenticated-refresh',
   'snapshot-refresh',
   'dashboard-refresh',

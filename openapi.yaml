@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Iris API
-  version: 3.16.0
+  version: 3.17.0
   license:
     name: ISC
     identifier: ISC
@@ -36,6 +36,51 @@ tags:
   - name: Legacy v2
     description: Deprecated compatibility surface; use v3 instead.
 paths:
+  /v3/me/account:
+    delete:
+      operationId: deletePrivateAccount
+      tags: [Watchlists]
+      security: [{ firebaseIdToken: [] }, { deletionReceipt: [] }]
+      description: Irreversibly purge saved references and commit durable Firebase cleanup. Empty body and no query parameters. Firebase identity must be current and authenticated within five minutes; unverified email is allowed. A receipt may only repeat/read an already accepted lifecycle, never start deletion or extend expiry. Requires separately approved cleanup setup.
+      parameters:
+        - name: X-Iris-Confirm-Deletion
+          in: header
+          description: Required with Firebase authentication to explicitly confirm permanent deletion; no undo.
+          schema: { type: string, enum: [permanent] }
+      responses:
+        '202':
+          description: Purge and cleanup intent committed, not a claim that Firebase deletion completed. Receipt expires one hour after acceptance and is memory-only.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountDeletionEnvelope' }
+        '200':
+          description: Current lifecycle for an accepted receipt.
+          content:
+            application/json:
+              schema:
+                { $ref: '#/components/schemas/AccountDeletionStatusEnvelope' }
+        '400': { $ref: '#/components/responses/PrivateFailure' }
+        '401': { $ref: '#/components/responses/PrivateFailure' }
+        '403': { $ref: '#/components/responses/PrivateFailure' }
+        '429': { $ref: '#/components/responses/PrivateFailure' }
+        '503': { $ref: '#/components/responses/PrivateFailure' }
+  /v3/me/account/deletion:
+    get:
+      operationId: getAccountDeletionStatus
+      tags: [Watchlists]
+      security: [{ deletionReceipt: [] }]
+      description: Receipt-only status; never accepts Firebase credentials or exposes an identity. Empty body, no query parameters. Rate limited by IP and receipt. Receipt expiry does not cancel durable cleanup.
+      responses:
+        '200':
+          description: Current deletion status.
+          content:
+            application/json:
+              schema:
+                { $ref: '#/components/schemas/AccountDeletionStatusEnvelope' }
+        '400': { $ref: '#/components/responses/PrivateFailure' }
+        '401': { $ref: '#/components/responses/PrivateFailure' }
+        '429': { $ref: '#/components/responses/PrivateFailure' }
+        '503': { $ref: '#/components/responses/PrivateFailure' }
   /v3/me/watchlist:
     get:
       operationId: getPrivateWatchlist
@@ -898,6 +943,32 @@ components:
           },
       }
   schemas:
+    AccountDeletionEnvelope:
+      type: object
+      required: [data, meta]
+      additionalProperties: false
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          additionalProperties: false
+          required: [status, receipt, expiresAt]
+          properties:
+            status: { type: string, enum: [deleting, deleted] }
+            receipt: { type: string, minLength: 1, maxLength: 2048 }
+            expiresAt: { type: string, format: date-time }
+    AccountDeletionStatusEnvelope:
+      type: object
+      required: [data, meta]
+      additionalProperties: false
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          additionalProperties: false
+          required: [status]
+          properties:
+            status: { type: string, enum: [deleting, deleted] }
     WatchlistItem:
       type: object
       additionalProperties: false
@@ -1903,6 +1974,11 @@ components:
                             amount: { type: [string, 'null'] }
                             decimals: { type: integer }
   securitySchemes:
+    deletionReceipt:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'Deletion <signed receipt>; one-hour, project-scoped, status-only capability. Never a Firebase or watchlist credential.'
     firebaseIdToken:
       type: http
       scheme: bearer

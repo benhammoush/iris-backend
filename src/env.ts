@@ -49,6 +49,8 @@ export interface WorkerVariables {
   PROVIDER_MODE?: string;
   RETAIN_STALE_MARKET_DATA?: string;
   WATCHLIST_ENABLED?: string;
+  WATCHLIST_CLEANUP_ENABLED?: string;
+  WATCHLIST_RECEIPT_KEY?: string;
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_CLIENT_EMAIL?: string;
   FIREBASE_PRIVATE_KEY?: string;
