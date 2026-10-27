@@ -137,6 +137,9 @@ void test('v3 canonical mint routes return range-aware Birdeye close-price histo
       env({ BIRDEYE_API_KEY: 'key' }),
       {},
     );
+    for (const response of [history, candles, detail]) {
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+    }
     const historyPoint = (
       await responseJson<ResourceEnvelope<{ points: unknown[] }>>(history)
     ).data.points[0];
@@ -197,6 +200,7 @@ void test('v3 candle pagination requests the preceding provider window and rejec
     );
     assert.equal(response.status, 200);
     assert.match(requestUrl, /type=1H/);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.match(requestUrl, /count_limit=300/);
     assert.match(requestUrl, /time_to=1760000000/);
     const invalid = await worker.fetch(
@@ -228,15 +232,26 @@ void test('v3 candle pagination requests the preceding provider window and rejec
   }
 });
 
-void test('candle cache records expire after the existing stale window', async () => {
+void test('live candles ignore stored records and refetch without KV reads or writes', async () => {
   const originalFetch = fetchStub.fetch;
-  const writes: {
-    key: string;
-    value: string;
-    options?: { expirationTtl?: number };
-  }[] = [];
-  fetchStub.fetch = () =>
-    Response.json({
+  let calls = 0;
+  const store: SnapshotStore = {
+    /** Reject any live candle-store read.
+     * @returns A failed test if live data attempts to reuse stored candles.
+     */
+    get: () => {
+      throw new Error('Live candles must not read KV');
+    },
+    /** Reject any live candle-store write.
+     * @returns A failed test if live data attempts to persist candles.
+     */
+    put: () => {
+      throw new Error('Live candles must not write KV');
+    },
+  };
+  fetchStub.fetch = () => {
+    calls += 1;
+    return Response.json({
       success: true,
       data: {
         items: [
@@ -244,28 +259,14 @@ void test('candle cache records expire after the existing stale window', async (
         ],
       },
     });
+  };
   try {
-    await candlesForAsset(
-      {
-        /** Read an absent candle entry.
-         * @returns Null to require fresh controlled-provider publication.
-         */
-        get: () => Promise.resolve(null),
-        /** Capture candle publication and its retention policy.
-         * @param key - Complete candle resource identity.
-         * @param value - Serialized candle envelope.
-         * @param options - Expiration policy retained for assertions.
-         * @returns Completion after recording the write.
-         */
-        put: (key, value, options) =>
-          Promise.resolve(writes.push({ key, value, options })),
-      },
-      SOL_MINT,
-      'key',
-      '1H',
-    );
-    assert.equal(writes.length, 1);
-    assert.deepEqual(writes[0].options, { expirationTtl: 86_400 });
+    for (let i = 0; i < 2; i += 1) {
+      const result = await candlesForAsset(store, SOL_MINT, 'key', '1H');
+      assert.equal(result.state, 'fresh');
+      assert.equal(result.candles?.length, 1);
+    }
+    assert.equal(calls, 2);
   } finally {
     fetchStub.fetch = originalFetch;
   }
@@ -632,7 +633,7 @@ void test('Helius mint transaction history preserves all mint-address transactio
   }
 });
 
-void test('v3 history negative-caches unavailable Birdeye responses', async () => {
+void test('v3 history retries a later request after unavailable Birdeye data without negative caching', async () => {
   const values = new Map<string, unknown>();
   let calls = 0;
   const kv: SnapshotStore = {
@@ -663,13 +664,14 @@ void test('v3 history negative-caches unavailable Birdeye responses', async () =
       (await historyForAsset(kv, SOL_MINT, 'key')).state,
       'unavailable',
     );
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
+    assert.equal(values.size, 0);
   } finally {
     fetchStub.fetch = originalFetch;
   }
 });
 
-void test('v3 history preserves a stale seven-day Birdeye candle cache when the provider reports unavailable', async () => {
+void test('v3 history does not revive stored candles when the provider reports unavailable', async () => {
   const timestamp = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const cached = {
     fetchedAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
@@ -699,8 +701,8 @@ void test('v3 history preserves a stale seven-day Birdeye candle cache when the 
       SOL_MINT,
       'key',
     );
-    assert.equal(history.state, 'stale');
-    assert.deepEqual(history.points, [{ date: timestamp, price: 1 }]);
+    assert.equal(history.state, 'unavailable');
+    assert.equal(history.points, null);
   } finally {
     fetchStub.fetch = originalFetch;
   }
@@ -1074,6 +1076,133 @@ void test('v3 wallet propagates DAS failures before attempting Jupiter enrichmen
 });
 
 for (const status of [429, 500, 503]) {
+  void test(`wallet HTTP ${status} Helius failure includes safe typed stop details`, async () => {
+    const originalFetch = fetchStub.fetch;
+    fetchStub.fetch = () =>
+      new Response('private upstream details', {
+        status,
+        headers: { 'retry-after': '60' },
+      });
+    try {
+      const response = await worker.fetch(
+        new Request(`https://api.example/v3/wallets/${SOL_MINT}`),
+        env({ HELIUS_API_KEY: 'h-secret', JUPITER_API_KEY: 'j-secret' }),
+        {},
+      );
+      assert.equal(response.status, 503);
+      const body = (await response.json()) as {
+        meta: { providerStop: unknown };
+        error: { code: string };
+      };
+      assert.equal(body.error.code, 'WALLET_LOOKUP_UNAVAILABLE');
+      assert.deepEqual(body.meta.providerStop, {
+        provider: 'helius',
+        reason: status === 429 ? 'throttled' : 'unavailable',
+      });
+      assert.doesNotMatch(
+        JSON.stringify(body),
+        /h-secret|j-secret|private upstream details/,
+      );
+    } finally {
+      fetchStub.fetch = originalFetch;
+    }
+  });
+}
+
+for (const failure of ['network', 'json', 'rpc-throttled', 'rpc-unavailable']) {
+  void test(`wallet ${failure} Helius failure returns typed metadata without raw details`, async () => {
+    const originalFetch = fetchStub.fetch;
+    fetchStub.fetch = () => {
+      if (failure === 'network')
+        throw new TypeError('private upstream details');
+      if (failure === 'json') return new Response('{private upstream details');
+      return Response.json({
+        error: {
+          code: failure === 'rpc-throttled' ? 429 : -32603,
+          message: 'private upstream details',
+        },
+      });
+    };
+    try {
+      const response = await worker.fetch(
+        new Request(`https://api.example/v3/wallets/${SOL_MINT}`),
+        env({ HELIUS_API_KEY: 'h-secret' }),
+        {},
+      );
+      assert.equal(response.status, 503);
+      const body = (await response.json()) as {
+        meta: { providerStop: unknown };
+      };
+      assert.deepEqual(body.meta.providerStop, {
+        provider: 'helius',
+        reason: failure === 'rpc-throttled' ? 'throttled' : 'unavailable',
+      });
+      assert.doesNotMatch(
+        JSON.stringify(body),
+        /h-secret|private upstream details/,
+      );
+    } finally {
+      fetchStub.fetch = originalFetch;
+    }
+  });
+}
+
+void test('wallet enrichment allows two attempts for each of 40 mints, retaining exact balances without caching', async () => {
+  const originalFetch = fetchStub.fetch;
+  let attempts = 0;
+  const attemptsByUrl = new Map<string, number>();
+  let writes = 0;
+  fetchStub.fetch = (url) => {
+    if (url.includes('helius-rpc.com'))
+      return Response.json({
+        result: {
+          nativeBalance: { lamports: '9007199254740993123' },
+          items: Array.from({ length: 39 }, (_, i) => ({ id: `Mint${i}` })),
+        },
+      });
+    attempts += 1;
+    const mintAttempts = (attemptsByUrl.get(url) ?? 0) + 1;
+    attemptsByUrl.set(url, mintAttempts);
+    if (mintAttempts === 1) return new Response(null, { status: 503 });
+    return Response.json([]);
+  };
+  try {
+    const response = await worker.fetch(
+      new Request(`https://api.example/v3/wallets/${SOL_MINT}`),
+      env({
+        HELIUS_API_KEY: 'h',
+        JUPITER_API_KEY: 'j',
+        SNAPSHOTS: {
+          /** Count attempted cache writes without persisting data.
+           * @returns Completion after recording the write.
+           */
+          put: () => {
+            writes += 1;
+            return Promise.resolve();
+          },
+        },
+      }),
+      {},
+    );
+    assert.equal(response.status, 200);
+    const body =
+      await responseJson<ResourceEnvelope<Record<string, unknown>>>(response);
+    assert.equal(attempts, 80);
+    assert.equal(attemptsByUrl.size, 40);
+    assert.ok([...attemptsByUrl.values()].every((count) => count === 2));
+    assert.equal(writes, 0);
+    assert.equal(body.meta.providerStop, undefined);
+    assert.equal(
+      record(array(body.data.balances)[0]).atomicAmount,
+      '9007199254740993123',
+    );
+    assert.equal(record(body.data.valuation).complete, false);
+  } finally {
+    fetchStub.fetch = originalFetch;
+  }
+});
+
+for (const status of [429, 500, 503]) {
   void test(`wallet HTTP response retains balances and a typed Jupiter stop on ${status}, without caching the failure`, async () => {
     const originalFetch = fetchStub.fetch;
     const writes: string[] = [];
@@ -1097,8 +1226,8 @@ for (const status of [429, 500, 503]) {
       HELIUS_API_KEY: 'h-secret',
       JUPITER_API_KEY: 'j-secret',
       SNAPSHOTS: {
-        /** Record cache publication without external persistence.
-         * @param key - Wallet cache identity being published.
+        /** Capture unexpected persistence attempts during an on-demand wallet read.
+         * @param key - Storage key that must not be written.
          * @returns Completion after capturing the write.
          */
         put: (key) => {
@@ -1143,14 +1272,14 @@ for (const status of [429, 500, 503]) {
       assert.equal(record(array(recovered.data.balances)[0]).priceUsd, 100);
       // Exact quantities beyond the valuation precision limit stay unpriced even after recovery.
       assert.equal(record(recovered.data.valuation).complete, false);
-      assert.equal(writes.length, 1);
+      assert.equal(writes.length, 0);
     } finally {
       fetchStub.fetch = originalFetch;
     }
   });
 }
 
-void test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compatibility', async () => {
+void test('v3 wallet reads bypass KV, with transaction pagination, CORS and v2 compatibility preserved', async () => {
   const originalFetch = fetchStub.fetch;
   const writes: { key: string; value: string }[] = [];
   const cache = new Map<string, unknown>();
@@ -1210,11 +1339,14 @@ void test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compat
     return Response.json({ prices: [[1_760_000_000_000, 150]] });
   };
   const snapshots: SnapshotStore = {
-    /** Read the isolated wallet cache.
+    /** Reject wallet reads while allowing unrelated snapshot resolution.
      * @param key - Requested resource identity.
      * @returns Stored unknown JSON or null when absent.
      */
-    get: (key) => Promise.resolve(cache.get(key) ?? null),
+    get: (key) => {
+      assert.equal(key.startsWith('wallet:v3:'), false);
+      return Promise.resolve(cache.get(key) ?? null);
+    },
     /** Capture actual resource publication.
      * @param key - Requested resource identity.
      * @param value - Complete serialized payload.
@@ -1265,10 +1397,18 @@ void test('v3 wallet cache, transaction pagination defaults, CORS, and v2 compat
         ResourceEnvelope<unknown, { wallet: { cacheState: string } }>
       >(second);
     assert.equal(firstBody.data.cacheState, undefined);
-    assert.equal(firstBody.meta.wallet.cacheState, 'miss');
-    assert.equal(secondBody.meta.wallet.cacheState, 'fresh');
+    assert.equal(firstBody.meta.wallet.cacheState, undefined);
+    assert.equal(secondBody.meta.wallet.cacheState, undefined);
     assert.ok(firstBody.meta.wallet.asOf);
-    assert.equal(writes.length, 1);
+    assert.equal(writes.length, 0);
+    assert.equal(
+      requests.filter((request) =>
+        request.value.includes('mainnet.helius-rpc.com'),
+      ).length,
+      2,
+    );
+    assert.equal(first.headers.get('cache-control'), 'no-store');
+    assert.equal(second.headers.get('cache-control'), 'no-store');
     const transactions = await worker.fetch(
       new Request(`https://api.example/v3/wallets/${SOL_MINT}/transactions`),
       env({ HELIUS_API_KEY: 'h' }),

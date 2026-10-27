@@ -14,6 +14,52 @@ import { heliusRpc } from '../../src/v3.ts';
 const url = 'https://provider.test/read?api-key=never-print-this';
 const options = { provider: 'Test provider' };
 
+void test('exhausted or invalid attempt budgets fail before fetching', async (t) => {
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json({})),
+  );
+  for (const remaining of [0, -1, 0.5, NaN, Infinity]) {
+    await assert.rejects(
+      providerJson(url, {}, { ...options, budget: { remaining } }),
+      classified('budget'),
+    );
+  }
+  assert.equal(fetcher.mock.callCount(), 0);
+});
+
+void test('retries consume the same allowance and cannot exceed it', async (t) => {
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response(null, { status: 503 })),
+  );
+  const budget = { remaining: 1 };
+  await assert.rejects(
+    providerJson(url, {}, { ...options, budget }),
+    classified('budget'),
+  );
+  assert.equal(fetcher.mock.callCount(), 1);
+  assert.equal(budget.remaining, 0);
+});
+
+void test('concurrent reads reserve each attempt before dispatch and budgets are request-owned', async (t) => {
+  const fetcher = t.mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(Response.json({ ok: true })),
+  );
+  const budget = { remaining: 2 };
+  const results = await Promise.allSettled(
+    Array.from({ length: 5 }, () =>
+      providerJson(url, {}, { ...options, budget }),
+    ),
+  );
+  assert.equal(
+    results.filter((result) => result.status === 'fulfilled').length,
+    2,
+  );
+  assert.equal(fetcher.mock.callCount(), 2);
+  assert.equal(budget.remaining, 0);
+  await providerJson(url, {}, { ...options, budget: { remaining: 1 } });
+  assert.equal(fetcher.mock.callCount(), 3);
+});
+
 /** Flush queued promise callbacks without introducing real timing delays.
  * @returns Completion after bounded promise-queue draining under the controlled clock.
  */
@@ -288,7 +334,7 @@ void test('Helius RPC application errors are not retried', async (t) => {
   );
   await assert.rejects(
     heliusRpc('getSupply', [], 'test-key', 20_000),
-    /Helius RPC error: Invalid request/,
+    classified('json'),
   );
   assert.equal(fetcher.mock.callCount(), 1);
 });

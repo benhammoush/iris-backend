@@ -322,11 +322,17 @@ indexes, cleanup and abuse; this is not a measured bill or capacity guarantee.
 There is no usage forecast yet. Keep no-billing setup unless separately approved;
 quota exhaustion must degrade private features without breaking public browsing.
 Automatic wallet summaries add up to 100 public Worker wallet reads per page
-refresh, not 100 provider calls. Current uncached `walletWork` permits one Helius
-read and up to 40 distinct Jupiter mint lookups per wallet. Each read can attempt
-twice, so the worst-case request budgets are **2 Helius + 80 Jupiter attempts per
-wallet**, or **200 Helius + 8,000 Jupiter attempts per 100-wallet refresh**. Cache
-hits/single-flight may reduce usage; they are not a guaranteed quota reduction.
+refresh, not 100 provider calls. Worker 3.19.0 enforces **2 Helius + 80 Jupiter
+fetch attempts per live wallet lookup**, including retries. The request-owned Jupiter
+allowance covers up to two attempts for each of 40 mint lookups, shared across their five-reader pool;
+each attempt reserves its allowance synchronously before fetch. Exhaustion dispatches
+no further fetches, drains already dispatched work and returns usable balances
+with unpriced holdings and a typed stop. Wallet balances are fetched on demand:
+live reads never reuse or write wallet KV entries, and responses use
+`Cache-Control: no-store`. Explicit local/CI fixture mode remains available.
+The upper bound is **200 Helius + 8,000 Jupiter attempts per 100-wallet refresh**;
+in-flight sharing and queue stops may reduce usage, but are not guaranteed
+quota reductions.
 Sequential wallet summaries schedule one Helius read followed by at most five
 concurrent Jupiter mint reads within that wallet. Worker 3.18.0 stops queued mint
 work on the first terminal failure and drains already dispatched mint workers
@@ -335,11 +341,12 @@ starting another wallet, and stops the remaining queue on surfaced provider or
 transport failures, including typed stops in successful partial responses.
 This is per active page batch, not a global limit: multiple users/tabs and work
 already dispatched by an aborted/superseded page can still overlap.
-The attempt ceilings above are not accepted hosted allowances. Before activation,
-WL-O1 must approve explicit per-provider attempt budgets per refresh and shared
-rate limits against actual account quotas, counting retries and mint fanout;
-enforcement must stop before spending an exhausted budget. Repeated focus/manual
-refreshes and multiple users/tabs also consume those shared budgets.
+Per-wallet attempt caps and the sequential stop-on-failure queue bound each lookup
+without a shared quota service or additional infrastructure. These are not global/provider-account quotas or hosted
+allowances. Repeated focus/manual refreshes, multiple users/tabs and other public
+provider endpoints can consume additional quota. WL-O1 must still check actual
+account allowances before activation; revisit shared enforcement only if observed
+traffic or provider usage warrants it.
 
 Hosted activation additionally requires a typed provider stop signal to survive
 the Worker boundary, including partial wallet responses: identify the provider
@@ -351,18 +358,21 @@ prices alone; legitimate unpriced holdings remain usable partial results. Keep
 valid balances visible with a partial valuation when Jupiter fails, but do not
 swallow that provider failure as an ordinary success for queue scheduling.
 Already dispatched requests may finish within their bounds; no automatic new
-batch may bypass a stop signal or accepted shared budget. Provider signals must
+batch may silently bypass a stop signal. Provider signals must
 contain no credentials or raw upstream bodies.
 
 Worker 3.18.0 returns `meta.providerStop` for terminal Jupiter enrichment failures,
 with provider `jupiter` and reason `throttled` (429) or `unavailable` (other failures).
-Valid DAS balances remain visible with unpriced holdings. Failure-bearing partial
-responses are not written to the wallet cache, so a later explicit retry can recover.
+Valid DAS balances remain visible with unpriced holdings. A later explicit retry
+can recover pricing; neither successful nor failed wallet responses are cached.
 Ordinary missing prices are not provider failures. Market/snapshot callers retain
 their existing null-fallback behavior; only the v3 wallet opts into propagation.
-Helius failures still surface as HTTP 503 and stop the frontend queue; typed Helius
-failure details and enforced provider budgets remain separate work. The contract
-reserves `budget-exhausted` but this change does not enforce or select any budget.
+Worker 3.19.0 additionally returns typed Helius stop details in `meta.providerStop`
+on wallet HTTP 503 responses: 429 maps to `throttled`; network, timeout, malformed
+JSON and other failures map to `unavailable`. JSON-RPC error code 429 is also
+classified as throttled without retaining raw error text. Jupiter budget exhaustion
+maps to `budget-exhausted` on the successful partial response. Existing frontend
+HTTP 503 handling and partial-response stop handling both stop queued wallet reads.
 Local tests do not establish hosted allowances or activation. Helius/Jupiter quota
 and provider logging/privacy acceptance remain WL-O1 gates.
 

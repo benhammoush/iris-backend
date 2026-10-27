@@ -28,9 +28,7 @@ flowchart TB
 
     subgraph KV["Cloudflare KV - SNAPSHOTS"]
       Snapshot["snapshot:v2:timestamp\nsnapshot:current pointer\nComplete write before pointer"]
-      Candles["candles:v2:birdeye:mint:timeframe:300:usd:end\n30m fresh / 24h stale"]
       Onchain["asset:v3:onchain:mint\n300s TTL"]
-      Wallets["wallet:v3:address\n60s TTL"]
       Dashboard["helius:v3:dashboard\ntransactions:v3:recent\n60s fresh / 24h stale"]
       DefiCache["defillama:v3:dashboard\n1h fresh / 24h stale"]
     end
@@ -63,9 +61,7 @@ flowchart TB
   Refresh --> Recent
   Refresh --> Defi
   Dispatcher <--> Snapshot
-  Dispatcher <--> Candles
   Dispatcher <--> Onchain
-  Dispatcher <--> Wallets
   Dispatcher <--> Dashboard
   Dispatcher <--> DefiCache
   Snap --> Market
@@ -126,12 +122,9 @@ flowchart LR
   Fresh -->|yes| SnapshotResponse["Return snapshot data\nmeta snapshot state + provenance"]
   Fresh -->|no| Fixture["Use bundled fixture snapshot\nnever fabricate missing values"]
 
-  Route -->|candles/history| CandleCache{"Fresh candle KV?"}
-  CandleCache -->|yes| CandleResponse["Return Birdeye page"]
-  CandleCache -->|no| Birdeye["Fetch Birdeye OHLCV"]
-  Birdeye -->|valid| PutCandles["Write candle KV"] --> CandleResponse
-  Birdeye -->|failure and <=24h cache| StaleCandles["Return stale candle page"]
-  Birdeye -->|no usable cache| NullCandles["Return candles: null\nstate unavailable"]
+  Route -->|candles/history| Birdeye["Fetch Birdeye OHLCV on demand"]
+  Birdeye -->|valid| CandleResponse["Return Birdeye page\nCache-Control: no-store"]
+  Birdeye -->|unavailable| NullCandles["Return candles: null\nstate unavailable"]
 
   Route -->|onchain profile| OnchainCache{"300-second KV profile?"}
   OnchainCache -->|yes| OnchainResponse["Return Helius profile\ncacheState fresh"]
@@ -143,19 +136,24 @@ flowchart LR
   Holders -->|success| HolderResponse["Return token accounts\nnot unique holders"]
   Holders -->|failure| Onchain503
 
-  Route -->|wallet| WalletCache{"60-second wallet KV?"}
-  WalletCache -->|yes| WalletResponse["Return cached balances"]
-  WalletCache -->|no| WalletHelius["Helius DAS getAssetsByOwner"]
-  WalletHelius --> JupiterEnrich["Best-effort Jupiter enrichment"] --> PutWallet["Write wallet KV"] --> WalletResponse
+  Route -->|wallet| WalletHelius["Helius DAS getAssetsByOwner on demand"]
+  WalletHelius --> JupiterEnrich["Best-effort Jupiter enrichment"] --> WalletResponse["Return balances\nCache-Control: no-store"]
   WalletHelius -->|failure| Wallet503["503 WALLET_LOOKUP_UNAVAILABLE"]
 ```
+
+Wallet balances and price charts do not reuse completed results. Live requests
+never read or write their former KV entries, and chart/history responses (including
+legacy asset responses containing history) use `Cache-Control: no-store`.
+Identical requests may still share work while it is in flight; the result is
+discarded after completion. Explicit local/CI `cache-only` mode reads seeded
+fixtures without contacting providers; it is not a live-response cache.
 
 ## Scheduled Snapshot Flow
 
 1. Cloudflare Cron runs hourly, or CI calls authenticated `POST /internal/refresh` after deployment.
 2. `refreshSnapshot()` fetches Helius network metrics and configured reviewed-pool activity, then fetches the Jupiter market catalog and discovery lists.
 3. The Worker writes a complete `snapshot:v2:<timestamp>` record to KV.
-4. Only after the versioned snapshot write succeeds, the Worker updates `snapshot:current`. Production versioned snapshots and DefiLlama dashboard records expire after 24 hours. Dev sets `RETAIN_STALE_MARKET_DATA=true`: these records have no storage expiry and remain readable past 24 hours, still labelled stale with their original timestamps. Dev retains versioned snapshot records without automatic pruning. Birdeye candle and other on-demand cache limits are unchanged.
+4. Only after the versioned snapshot write succeeds, the Worker updates `snapshot:current`. Production versioned snapshots and DefiLlama dashboard records expire after 24 hours. Dev sets `RETAIN_STALE_MARKET_DATA=true`: these records have no storage expiry and remain readable past 24 hours, still labelled stale with their original timestamps. Dev retains versioned snapshot records without automatic pruning. Wallet balances and Birdeye charts are fetched on demand, not stored in KV or browser/CDN caches; other cache limits are unchanged.
 5. In parallel, best-effort refreshes update the Helius dashboard sample and DefiLlama dashboard. Their failure does not prevent core snapshot publication.
 6. A core refresh failure keeps the last complete snapshot. Production falls back to the bundled fixture snapshot after the usable lifetime expires. Dev keeps its last valid market data; missing, malformed or future-dated records still fall back. This does not enable scheduled dev refresh or revive keys already deleted by KV expiry: one successful, separately authorized dev refresh is needed to populate retained records.
 

@@ -55,7 +55,7 @@ const rpcMethods = new Set([
   'getBlockProduction',
   'getBlock',
 ]);
-const failures = new Set(['http', 'network', 'timeout', 'json']);
+const failures = new Set(['http', 'network', 'timeout', 'json', 'budget']);
 /** Supported operation outcome categories for aggregation or diagnostics. */
 type Outcome = 'completed' | 'failed' | 'retry' | 'fallback';
 /** Allowlisted structured diagnostic fields; raw provider payloads are not retained. */

@@ -56,6 +56,17 @@ void test('provider stop metadata accepts only the controlled provider/reason co
         validate({ requestId: 'test', providerStop: { provider, reason } }),
         true,
       );
+      assert.equal(
+        validator('ErrorEnvelope')({
+          error: {
+            code: 'WALLET_LOOKUP_UNAVAILABLE',
+            message: 'Unavailable',
+            requestId: 'test',
+          },
+          meta: { requestId: 'test', providerStop: { provider, reason } },
+        }),
+        true,
+      );
     }
   }
   for (const providerStop of [

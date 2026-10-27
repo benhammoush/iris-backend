@@ -868,7 +868,7 @@ void test('DefiLlama provider and write failures leave preceding cache readable 
   }
 });
 
-void test('failed candle writes fall back to usable preceding candles, never expired or malformed records', async () => {
+void test('live candles do not depend on KV availability or stored candle age', async () => {
   const original = fetchStub.fetch;
   fetchStub.fetch = () =>
     Response.json({
@@ -902,11 +902,9 @@ void test('failed candle writes fall back to usable preceding candles, never exp
         put: () => Promise.reject(new Error('Injected KV write failure')),
       };
       const result = await candlesForAsset(kv, SOL_MINT, 'test');
-      const usable =
-        cached.fetchedAt !== 'invalid' &&
-        Date.now() - Date.parse(cached.fetchedAt) <= STALE_AFTER_MS;
-      assert.equal(result.state, usable ? 'stale' : 'unavailable');
-      assert.deepEqual(result.candles, usable ? cached.candles : null);
+      assert.equal(result.state, 'fresh');
+      assert.equal(result.candles?.length, 1);
+      assert.equal(record(result.candles?.[0]).closeUsd, 2);
     }
   } finally {
     fetchStub.fetch = original;

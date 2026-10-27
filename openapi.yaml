@@ -1,13 +1,15 @@
 openapi: 3.1.0
 info:
   title: Iris API
-  version: 3.18.0
+  version: 3.19.0
   license:
     name: ISC
     identifier: ISC
     url: https://spdx.org/licenses/ISC.html
   description: |
     Iris provides cached Solana market data and on-demand public-wallet lookups.
+    Wallet balances and Birdeye price charts are fetched on demand without KV
+    response caching. Wallet, candle and history-bearing responses use no-store.
     `/v3` is the canonical public contract. `/v1` and `/v2` remain available only
     as deprecated compatibility surfaces.
 security: []
@@ -1035,7 +1037,7 @@ components:
       type: object
       additionalProperties: false
       required: [provider, reason]
-      description: Stop queued provider work even when the response retains usable partial wallet balances. Absence does not guarantee all holdings are priced. Budget exhaustion is reserved for separately approved budget enforcement.
+      description: Stop queued provider work, including when a successful response retains usable partial wallet balances. Wallet enrichment allows at most 80 Jupiter fetch attempts including retries per lookup, covering up to two attempts for each of 40 mints; exhaustion returns budget-exhausted. This is not a shared or global quota. Absence does not guarantee all holdings are priced.
       properties:
         provider: { type: string, enum: [helius, jupiter] }
         reason:
@@ -1044,19 +1046,14 @@ components:
       type: object
       required: [error]
       properties:
-        {
-          error:
-            {
-              type: object,
-              required: [code, message, requestId],
-              properties:
-                {
-                  code: { type: string },
-                  message: { type: string },
-                  requestId: { type: string },
-                },
-            },
-        }
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string }
+        meta: { $ref: '#/components/schemas/Meta' }
     HealthEnvelope:
       {
         allOf:
@@ -1431,7 +1428,7 @@ components:
                     {
                       type: object,
                       required: [address],
-                      description: 'Fresh DAS responses populate balances and valuation; compatible cached wallet records can omit those fields.',
+                      description: 'Live DAS responses populate balances and valuation without retaining completed results; seeded local/CI fixtures can omit those fields.',
                       properties:
                         {
                           address: { type: string },
