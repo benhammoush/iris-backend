@@ -12,12 +12,17 @@ import {
   V3_ASSET_ONCHAIN_CACHE_SECONDS,
   V3_ASSET_TRANSACTION_PAGE_SIZE,
   V3_ASSET_TRANSACTIONS_KEY_PREFIX,
-  V3_WALLET_CACHE_SECONDS,
   V3_WALLET_EVENTS_KEY_PREFIX,
   V3_WALLET_KEY_PREFIX,
 } from './constants.ts';
 import { refreshMarket } from './market.ts';
-import { ProviderRequestError, providerJson } from './providerRequest.ts';
+import {
+  ProviderRequestError,
+  providerJson,
+  providerStop as classifyProviderStop,
+  type ProviderBudget,
+  type ProviderStop,
+} from './providerRequest.ts';
 import { singleFlight, providerKey } from './singleFlight.ts';
 import { decimalValue, formatAtomicAmount } from './transforms.ts';
 import { array, record, isRecord, scalarText } from './record.ts';
@@ -125,6 +130,7 @@ export function mapV3HistoryPoints(points: unknown) {
  * @param params - Method-specific positional or named parameters.
  * @param apiKey - Server-only operator credential.
  * @param timeoutMs - Maximum total request duration in milliseconds.
+ * @param budget - Optional request-owned allowance consumed before each fetch attempt.
  * @returns Unknown RPC result for resource-specific validation.
  */
 export async function heliusRpc(
@@ -132,6 +138,7 @@ export async function heliusRpc(
   params: unknown[] | Record<string, unknown>,
   apiKey: string,
   timeoutMs = 10_000,
+  budget?: ProviderBudget,
 ): Promise<unknown> {
   const payload = record(
     await providerJson(
@@ -141,12 +148,14 @@ export async function heliusRpc(
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }),
       },
-      { provider: 'Helius RPC', readOnlyPost: true, timeoutMs },
+      { provider: 'Helius RPC', readOnlyPost: true, timeoutMs, budget },
     ),
   );
   if (payload.error)
-    throw new Error(
-      `Helius RPC error: ${scalarText(record(payload.error).message, 'unknown') || 'unknown'}`,
+    throw new ProviderRequestError(
+      'Helius RPC',
+      record(payload.error).code === 429 ? 'http' : 'json',
+      record(payload.error).code === 429 ? 429 : null,
     );
   return payload.result;
 }
@@ -857,11 +866,11 @@ export function mapDasWallet(
 }
 
 /** Resolve wallet data and optionally refresh the market metadata used for valuation.
- * @param env - Selected cache and fallback provider bindings.
+ * @param env - Selected local fixture and provider bindings.
  * @param config - Effective provider settings and cache-only policy.
  * @param address - Exact requested wallet identity.
  * @param marketRefresh - Market enrichment operation; failures retain unpriced holdings.
- * @returns A bounded wallet projection with explicit cache freshness and partial valuation.
+ * @returns A bounded wallet projection with its observation time and partial valuation.
  */
 async function walletWork(
   env: Env,
@@ -869,16 +878,15 @@ async function walletWork(
   address: string,
   marketRefresh = refreshMarket,
 ) {
-  const key = `${V3_WALLET_KEY_PREFIX}${address}`;
-  const cached = await cachedValue(
-    env,
-    key,
-    (value) =>
-      record(value.wallet).address === address && validDate(value.asOf),
-  );
-  if (cached)
-    return { wallet: cached.wallet, freshness: cachedFreshness(cached.asOf) };
   if (cacheOnly(config)) {
+    const fixture = await cachedValue(
+      env,
+      `${V3_WALLET_KEY_PREFIX}${address}`,
+      (value) =>
+        record(value.wallet).address === address && validDate(value.asOf),
+    );
+    if (fixture)
+      return { wallet: fixture.wallet, freshness: { asOf: fixture.asOf } };
     const cause = Object.assign(
       new Error('Seeded wallet data is unavailable.'),
       { code: 'WALLET_LOOKUP_UNAVAILABLE' },
@@ -905,6 +913,8 @@ async function walletWork(
       },
     },
     apiKey,
+    10_000,
+    { remaining: 2 },
   );
   const mints = array(record(result).items)
     .map((item) => record(item).id)
@@ -912,23 +922,17 @@ async function walletWork(
     .slice(0, 40);
   if (!mints.includes(SOL_MINT)) mints.unshift(SOL_MINT);
   let market = null;
-  let providerStop:
-    { provider: 'jupiter'; reason: 'throttled' | 'unavailable' } | undefined;
+  let providerStop: ProviderStop | undefined;
   try {
     market = await marketRefresh(
       config.jupiterApiKey || env.JUPITER_API_KEY,
       mints.slice(0, 40),
       true,
+      { remaining: 80 },
     );
   } catch (cause) {
     unavailable('wallet-enrichment', 'Jupiter', cause);
-    providerStop = {
-      provider: 'jupiter',
-      reason:
-        cause instanceof ProviderRequestError && cause.status === 429
-          ? 'throttled'
-          : 'unavailable',
-    };
+    providerStop = classifyProviderStop(cause, 'jupiter');
   }
   const wallet = mapDasWallet(
     address,
@@ -936,11 +940,7 @@ async function walletWork(
     (market?.assets || []).map(v3Asset),
   );
   const asOf = new Date().toISOString();
-  if (env.SNAPSHOTS?.put && !providerStop)
-    await env.SNAPSHOTS.put(key, JSON.stringify({ wallet, asOf }), {
-      expirationTtl: V3_WALLET_CACHE_SECONDS,
-    });
-  return { wallet, freshness: { cacheState: 'miss', asOf }, providerStop };
+  return { wallet, freshness: { asOf }, providerStop };
 }
 
 /** Normalize an exact atomic quantity without a lossy floating-point conversion.

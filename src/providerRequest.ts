@@ -6,7 +6,39 @@
 import { diagnostic } from './diagnostics.ts';
 
 /** Supported provider failure categories for safe diagnostics and retry decisions. */
-export type ProviderFailure = 'http' | 'network' | 'timeout' | 'json';
+export type ProviderFailure =
+  'http' | 'network' | 'timeout' | 'json' | 'budget';
+
+/** Safe queue-stop metadata shared by successful partial and unavailable responses. */
+export interface ProviderStop {
+  provider: 'helius' | 'jupiter';
+  reason: 'throttled' | 'unavailable' | 'budget-exhausted';
+}
+
+/** Request-owned attempt allowance; shared by concurrent reads, never across requests. */
+export interface ProviderBudget {
+  remaining: number;
+}
+
+/** Classify a controlled failure without returning provider messages or response bodies.
+ * @param cause - Failure from the bounded provider read.
+ * @param provider - Provider identity selected by the caller.
+ * @returns Safe metadata instructing consumers to stop queued work.
+ */
+export function providerStop(
+  cause: unknown,
+  provider: ProviderStop['provider'],
+): ProviderStop {
+  return {
+    provider,
+    reason:
+      cause instanceof ProviderRequestError && cause.kind === 'budget'
+        ? 'budget-exhausted'
+        : cause instanceof ProviderRequestError && cause.status === 429
+          ? 'throttled'
+          : 'unavailable',
+  };
+}
 
 /** Provider failure retaining only provider identity, category and optional HTTP status. */
 export class ProviderRequestError extends Error {
@@ -52,6 +84,7 @@ interface ProviderReadOptions {
   provider: string;
   timeoutMs?: number;
   readOnlyPost?: boolean;
+  budget?: ProviderBudget;
 }
 
 /** Only provider reads belong here; POST callers must explicitly identify a read.
@@ -96,6 +129,14 @@ export async function providerJson(
       if (controller.signal.aborted || Date.now() >= deadline)
         throw timeoutError;
       let response: Response | undefined;
+      if (options.budget) {
+        if (
+          !Number.isSafeInteger(options.budget.remaining) ||
+          options.budget.remaining <= 0
+        )
+          throw new ProviderRequestError(provider, 'budget');
+        options.budget.remaining -= 1;
+      }
       attempts = attempt + 1;
       let failure: ProviderRequestError;
       try {

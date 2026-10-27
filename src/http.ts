@@ -3,6 +3,8 @@
  * @packageDocumentation
  */
 
+import type { ProviderStop } from './providerRequest.ts';
+
 /** Minimal request boundary used for correlation and authentication headers. */
 export interface HeaderRequest {
   headers: Pick<Headers, 'get'>;
@@ -49,6 +51,7 @@ export function json(
  * @param status - HTTP error status.
  * @param requestId - Correlation identifier for this failure.
  * @param origin - Optional allowed browser origin.
+ * @param providerStop - Optional sanitized signal to stop queued wallet reads.
  * @returns A non-cacheable public JSON error response.
  */
 export function error(
@@ -57,9 +60,13 @@ export function error(
   status: number,
   requestId: string,
   origin?: string | null,
+  providerStop?: ProviderStop,
 ): Response {
   return json(
-    { error: { code, message, requestId } },
+    {
+      error: { code, message, requestId },
+      ...(providerStop ? { meta: { requestId, providerStop } } : {}),
+    },
     status,
     requestId,
     origin,

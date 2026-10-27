@@ -114,6 +114,8 @@ void test('deprecated v1 and v2 asset routes remain compatibility aliases', asyn
     ).data;
     assert.equal(v2.status, 200);
     assert.equal(v1.status, 200);
+    assert.equal(v1.headers.get('cache-control'), 'no-store');
+    assert.equal(v2.headers.get('cache-control'), 'no-store');
     assert.equal(asset.chain, 'solana');
     assert.equal(asset.mint, SOL_MINT);
     assert.equal(asset.contractId, SOL_MINT);

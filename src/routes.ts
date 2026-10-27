@@ -7,12 +7,11 @@ import {
   API_VERSION,
   CANDLE_KEY_PREFIX,
   CANDLE_PAGE_SIZE,
-  FRESH_AFTER_MS,
   REFRESH_INTERVAL_MINUTES,
   REFRESH_INTERVAL_MS,
-  STALE_AFTER_MS,
 } from './constants.ts';
 import { error, json } from './http.ts';
+import { ProviderRequestError, providerStop } from './providerRequest.ts';
 import {
   candlePlan,
   fetchCandles,
@@ -39,30 +38,12 @@ import {
 import { loadHeliusDashboardSample } from './recentTransactions.ts';
 import { loadDefiLlamaDashboard } from './defillama.ts';
 import { singleFlight, providerKey } from './singleFlight.ts';
-import { array, record, isRecord, scalarText } from './record.ts';
-import type { Env, CacheWriteOptions } from './env.ts';
+import { array, record, scalarText } from './record.ts';
+import type { Env, SnapshotStore } from './env.ts';
 import type { WorkerConfig } from './config.ts';
 
-/** Cache binding operations needed by historical candle resources. */
-interface CandleCache {
-  /** Read the cached candle entry as JSON before resource-specific validation.
-   * @param key - Complete candle resource and time-window identity.
-   * @param type - JSON decoding selector.
-   * @returns Unknown stored JSON, or null when absent.
-   */
-  get: (key: string, type: 'json') => Promise<unknown>;
-  /** Persist the cache entry using the supplied key and optional expiry policy.
-   * @param key - Complete candle resource and time-window identity.
-   * @param value - Complete serialized candle envelope.
-   * @param options - Required expiration policy in seconds.
-   * @returns Completion of the cache write.
-   */
-  put?: (
-    key: string,
-    value: string,
-    options: Required<CacheWriteOptions>,
-  ) => Promise<unknown>;
-}
+/** Read-only store used exclusively for explicit local/CI candle fixtures. */
+type CandleFixtures = Pick<SnapshotStore, 'get'>;
 
 /** Validate and normalize a timestamp before using it in the response contract.
  * @param value - Unknown timestamp field.
@@ -84,33 +65,17 @@ function failureCode(value: unknown, fallback: string): string {
   return typeof code === 'string' && code ? code : fallback;
 }
 
-/** Check historical candle data before serving it from cache.
- * @param history - Unknown stored candle envelope.
- * @returns Whether its timestamp and candle collection permit reuse.
- */
-function usableCandles(history: unknown): history is Record<string, unknown> & {
-  fetchedAt: string;
-  candles: unknown[];
-} {
-  return (
-    isRecord(history) &&
-    typeof history.fetchedAt === 'string' &&
-    Number.isFinite(Date.parse(history.fetchedAt)) &&
-    Array.isArray(history.candles)
-  );
-}
-
-/** Resolve and cache candle data under the requested provider mode and time window.
- * @param kv - Optional candle cache binding.
+/** Fetch candles on demand, or read seeded fixtures only in explicit cache-only mode.
+ * @param kv - Optional local/CI fixture store; never read or written in live mode.
  * @param mint - Exact requested mint identity.
  * @param apiKey - Optional server-only Birdeye credential.
  * @param timeframe - Supported candle interval.
  * @param endTimestamp - Exclusive earlier-history boundary in Unix seconds, or null for latest.
  * @param providerMode - Live-read or cache-only policy.
- * @returns Candle data with fresh/stale/unavailable state and original observation time.
+ * @returns Fresh provider candles or an explicit unavailable result, without stored fallbacks.
  */
 async function candlesWork(
-  kv: CandleCache | null | undefined,
+  kv: CandleFixtures | null | undefined,
   mint: string,
   apiKey?: string,
   timeframe = '1H',
@@ -119,32 +84,20 @@ async function candlesWork(
 ) {
   const plan = candlePlan(timeframe);
   if (!plan) throw new Error('Unsupported candle timeframe.');
-  const endKey = endTimestamp === null ? 'latest' : String(endTimestamp);
-  const key = `${CANDLE_KEY_PREFIX}${mint}:${plan.timeframe}:${CANDLE_PAGE_SIZE}:usd:${endKey}`;
-  const cached = record(kv ? await kv.get(key, 'json') : null);
-  const fetchedAtValue = dateString(cached.fetchedAt);
-  const cachedUsable =
-    usableCandles(cached) ||
-    (cached?.unavailable === true && fetchedAtValue !== null);
-  const age = cachedUsable
-    ? Date.now() - Date.parse(fetchedAtValue ?? '')
-    : Infinity;
-  if (age >= 0 && age <= FRESH_AFTER_MS)
+  if (providerMode === 'cache-only') {
+    const endKey = endTimestamp === null ? 'latest' : String(endTimestamp);
+    const key = `${CANDLE_KEY_PREFIX}${mint}:${plan.timeframe}:${CANDLE_PAGE_SIZE}:usd:${endKey}`;
+    const fixture = record(kv ? await kv.get(key, 'json') : null);
+    const fetchedAt = dateString(fixture.fetchedAt);
+    const available = fetchedAt !== null && Array.isArray(fixture.candles);
     return {
-      candles: cached.unavailable ? null : array(cached.candles),
+      candles: available ? array(fixture.candles) : null,
       timeframe: plan.timeframe,
-      state: cached.unavailable ? 'unavailable' : 'fresh',
-      fetchedAt: fetchedAtValue,
+      state: available ? 'fixture' : 'unavailable',
+      fetchedAt: available ? fetchedAt : null,
       source: 'birdeye',
     };
-  if (providerMode === 'cache-only')
-    return {
-      candles: null,
-      timeframe: plan.timeframe,
-      state: 'unavailable',
-      fetchedAt: null,
-      source: 'birdeye',
-    };
+  }
   try {
     const result = await fetchCandles(
       mint,
@@ -152,82 +105,27 @@ async function candlesWork(
       plan.timeframe,
       endTimestamp === null ? Date.now() : endTimestamp * 1000,
     );
-    if (!result) {
-      if (age >= 0 && age <= STALE_AFTER_MS && usableCandles(cached))
-        return {
-          candles: cached.candles,
-          timeframe: cached.timeframe || plan.timeframe,
-          state: 'stale',
-          fetchedAt: cached.fetchedAt,
-          source: 'birdeye',
-        };
-      const fetchedAt = new Date().toISOString();
-      if (kv?.put)
-        await kv.put(
-          key,
-          JSON.stringify({
-            version: 2,
-            mint,
-            source: 'birdeye',
-            timeframe: plan.timeframe,
-            count: CANDLE_PAGE_SIZE,
-            fetchedAt,
-            unavailable: true,
-          }),
-          { expirationTtl: Math.ceil(STALE_AFTER_MS / 1000) },
-        );
-      return {
-        candles: null,
-        timeframe: plan.timeframe,
-        state: 'unavailable',
-        fetchedAt,
-        source: 'birdeye',
-      };
-    }
-    const fetchedAt = new Date().toISOString();
-    if (kv?.put)
-      await kv.put(
-        key,
-        JSON.stringify({
-          version: 2,
-          mint,
-          source: 'birdeye',
-          timeframe: result.timeframe,
-          count: CANDLE_PAGE_SIZE,
-          fetchedAt,
-          candles: result.candles,
-        }),
-        { expirationTtl: Math.ceil(STALE_AFTER_MS / 1000) },
-      );
     return {
-      candles: result.candles,
-      timeframe: result.timeframe,
-      state: 'fresh',
-      fetchedAt,
+      candles: result?.candles ?? null,
+      timeframe: result?.timeframe ?? plan.timeframe,
+      state: result ? 'fresh' : 'unavailable',
+      fetchedAt: result ? new Date().toISOString() : null,
       source: 'birdeye',
     };
   } catch (cause) {
     unavailable('candles', 'Birdeye', cause);
-    return age >= 0 && age <= STALE_AFTER_MS && usableCandles(cached)
-      ? {
-          candles: cached.candles,
-          timeframe: cached.timeframe || plan.timeframe,
-          state: 'stale',
-          fetchedAt: cached.fetchedAt,
-          source: 'birdeye',
-        }
-      : {
-          candles: null,
-          timeframe: plan.timeframe,
-          state: 'unavailable',
-          fetchedAt: null,
-          source: 'birdeye',
-        };
+    return {
+      candles: null,
+      timeframe: plan.timeframe,
+      state: 'unavailable',
+      fetchedAt: null,
+      source: 'birdeye',
+    };
   }
 }
 
-/** Coalesce identical candle requests using the cache binding and complete query identity.
- * @param kv - Optional cache binding identifying the sharing scope.
+/** Share only in-flight identical candle requests; completed results are never retained.
+ * @param kv - Optional fixture binding also identifying the environment scope.
  * @param mint - Exact requested mint identity.
  * @param apiKey - Optional server-only credential included in sharing identity.
  * @param timeframe - Supported candle interval.
@@ -236,7 +134,7 @@ async function candlesWork(
  * @returns The coalesced candle result without mixing windows or provider configurations.
  */
 export function candlesForAsset(
-  kv: CandleCache | null | undefined,
+  kv: CandleFixtures | null | undefined,
   mint: string,
   apiKey?: string,
   timeframe = '1H',
@@ -259,7 +157,7 @@ export function candlesForAsset(
 }
 
 /** Adapt the legacy history range to the asset candle contract.
- * @param kv - Optional candle cache binding.
+ * @param kv - Optional local/CI candle fixture binding.
  * @param mint - Exact requested mint identity.
  * @param apiKey - Optional server-only Birdeye credential.
  * @param range - Supported legacy history range.
@@ -267,7 +165,7 @@ export function candlesForAsset(
  * @returns Range-filtered closing-price points with the candle result's freshness metadata.
  */
 export async function historyForAsset(
-  kv: CandleCache | null | undefined,
+  kv: CandleFixtures | null | undefined,
   mint: string,
   apiKey?: string,
   range = '7d',
@@ -449,7 +347,6 @@ export async function route(
   const snapshotHeaders = cacheHeaders(60, 300);
   const dashboardHeaders = cacheHeaders(60, 60);
   const defillamaHeaders = cacheHeaders(300, 900);
-  const candleHeaders = cacheHeaders(1800, 86400);
   const noStoreSnapshotHeaders = {
     'cache-control': 'no-store',
     'x-snapshot-state': state,
@@ -907,7 +804,7 @@ export async function route(
         200,
         id,
         origin,
-        candleHeaders,
+        noStoreSnapshotHeaders,
       );
     }
     const range = url.searchParams.get('range') || '7d';
@@ -933,7 +830,7 @@ export async function route(
         200,
         id,
         origin,
-        candleHeaders,
+        noStoreSnapshotHeaders,
       );
     return json(
       {
@@ -950,7 +847,7 @@ export async function route(
       200,
       id,
       origin,
-      candleHeaders,
+      noStoreSnapshotHeaders,
     );
   }
   if (url.pathname.startsWith('/v3/wallets/')) {
@@ -1048,6 +945,9 @@ export async function route(
         503,
         id,
         origin,
+        cause instanceof ProviderRequestError && cause.provider === 'Helius RPC'
+          ? providerStop(cause, 'helius')
+          : undefined,
       );
     }
   }
@@ -1128,6 +1028,8 @@ export async function route(
       env.SNAPSHOTS,
       mint,
       config.birdeyeApiKey,
+      '7d',
+      config.providerMode,
     );
     return json(
       {
@@ -1146,7 +1048,7 @@ export async function route(
       200,
       id,
       origin,
-      snapshotHeaders,
+      noStoreSnapshotHeaders,
     );
   }
   if (url.pathname.startsWith(`${versionPrefix}/assets/`)) {

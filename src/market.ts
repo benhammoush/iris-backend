@@ -11,7 +11,7 @@ import {
 } from './constants.ts';
 import { assetIdentity } from './transforms.ts';
 import { isRecord, record, array } from './record.ts';
-import { providerJson } from './providerRequest.ts';
+import { providerJson, type ProviderBudget } from './providerRequest.ts';
 
 /** Normalize an unknown scalar to the supported string representation.
  * @param value - Unknown provider text field.
@@ -28,17 +28,19 @@ const BIRDEYE = 'https://public-api.birdeye.so';
  * @param url - Trusted provider read endpoint.
  * @param apiKey - Optional server-only API credential.
  * @param provider - Trusted provider label for controlled diagnostics.
+ * @param budget - Optional request-owned attempt allowance, including retries.
  * @returns Unknown provider JSON for subsequent field normalization.
  */
 async function fetchJson(
   url: string,
   apiKey: string | undefined,
   provider: string,
+  budget?: ProviderBudget,
 ): Promise<unknown> {
   return providerJson(
     url,
     { headers: apiKey ? { 'x-api-key': apiKey } : undefined },
-    { provider },
+    { provider, budget },
   );
 }
 
@@ -204,14 +206,20 @@ function payloadItems(payload: unknown): Record<string, unknown>[] {
 /** Resolve a token by mint through the configured provider.
  * @param mint - Exact case-sensitive mint identity to find.
  * @param apiKey - Optional server-only Jupiter credential.
+ * @param budget - Optional shared attempt allowance for this wallet enrichment.
  * @returns A matching provider record, or null without substituting another token.
  */
-export async function tokenByMint(mint: string, apiKey?: string) {
+export async function tokenByMint(
+  mint: string,
+  apiKey?: string,
+  budget?: ProviderBudget,
+) {
   const items = payloadItems(
     await fetchJson(
       `${JUPITER}/tokens/v2/search?query=${encodeURIComponent(mint)}`,
       apiKey,
       'Jupiter',
+      budget,
     ),
   );
   return (
@@ -245,12 +253,14 @@ function catalogTokens(tokens: Record<string, unknown>[], verifiedOnly = true) {
  * @param apiKey - Optional server-only Jupiter credential; absent credentials disable refresh.
  * @param candidateMints - Optional explicit mint list to resolve with bounded concurrency.
  * @param propagateFailure - Whether the wallet caller needs provider failures instead of a null fallback.
+ * @param budget - Optional attempt allowance shared by mint reads and retries.
  * @returns Available normalized market data, or null on unavailable configuration/provider work.
  */
 export async function refreshMarket(
   apiKey?: string,
   candidateMints: string[] | null = null,
   propagateFailure = false,
+  budget?: ProviderBudget,
 ) {
   if (!apiKey) return null;
   try {
@@ -258,7 +268,7 @@ export async function refreshMarket(
     if (Array.isArray(candidateMints)) {
       tokens = (
         await mapWithConcurrency([...new Set(candidateMints)], 5, (mint) =>
-          tokenByMint(mint, apiKey),
+          tokenByMint(mint, apiKey, budget),
         )
       ).filter((token): token is Record<string, unknown> => token !== null);
     } else {
