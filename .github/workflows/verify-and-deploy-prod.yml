@@ -14,9 +14,9 @@ permissions:
 jobs:
   verify_release:
     name: Production checks
-    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@d1143395dc6a078ef284978c1daf039ed06ff7d1
+    uses: benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@43018f3d7ec3605d14379be6f1f5de287ad6a1f1
     with:
-      automation_sha: d1143395dc6a078ef284978c1daf039ed06ff7d1
+      automation_sha: 43018f3d7ec3605d14379be6f1f5de287ad6a1f1
       source_sha: ${{ inputs.sha }}
       environment: production
       node_version: '22'
@@ -24,9 +24,9 @@ jobs:
     name: Production delivery
     needs: verify_release
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
-    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@d1143395dc6a078ef284978c1daf039ed06ff7d1
+    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@43018f3d7ec3605d14379be6f1f5de287ad6a1f1
     with:
-      automation_sha: d1143395dc6a078ef284978c1daf039ed06ff7d1
+      automation_sha: 43018f3d7ec3605d14379be6f1f5de287ad6a1f1
       source_sha: ${{ inputs.sha }}
       environment: production
       node_version: '22'

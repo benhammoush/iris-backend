@@ -7,6 +7,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+import { record } from '../../src/record.ts';
 import config from '../../.github/ci-cd.json' with { type: 'json' };
 
 const workflow = readFileSync(
@@ -28,6 +30,61 @@ const pr = readFileSync(
   new URL('../../.github/workflows/verify-pr.yml', import.meta.url),
   'utf8',
 );
+
+/** Check every parsed shared job reference and its revision input, including quoted YAML values.
+ * @param file - Workflow YAML to inspect.
+ */
+function assertSharedPins(file: string) {
+  const parsed: unknown = parse(file);
+  const prefix = 'benhammoush/ci-cd-workflows/.github/workflows/';
+  let references = 0;
+  for (const value of Object.values(record(record(parsed).jobs))) {
+    const job = record(value);
+    if (typeof job.uses !== 'string' || !job.uses.startsWith(prefix)) continue;
+    references++;
+    const path = job.uses.split('@')[0];
+    assert.equal(job.uses, `${path}@${config.automationSha}`);
+    const input = record(job.with).automation_sha;
+    if (path !== `${prefix}weekly-vuln-audit.yml` || input !== undefined)
+      assert.equal(input, config.automationSha);
+  }
+  assert.ok(references > 0);
+}
+
+void test('all shared workflow references and inputs match the configured immutable revision', () => {
+  assert.match(config.automationSha, /^[a-f0-9]{40}$/);
+  const audit = readFileSync(
+    new URL('../../.github/workflows/weekly-vuln-audit.yml', import.meta.url),
+    'utf8',
+  );
+  for (const file of [pr, workflow, production, audit]) assertSharedPins(file);
+});
+
+void test('a valid pinned job cannot hide a quoted unpinned job or mismatched revision input', () => {
+  const pinned = `jobs:
+  audit:
+    uses: "benhammoush/ci-cd-workflows/.github/workflows/weekly-vuln-audit.yml@${config.automationSha}"
+`;
+  assertSharedPins(pinned);
+  for (const quote of ['"', "'"]) {
+    assert.throws(() =>
+      assertSharedPins(`${pinned}
+  additional:
+    uses: ${quote}benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@main${quote}
+    with:
+      automation_sha: ${config.automationSha}
+`),
+    );
+  }
+  assert.throws(() =>
+    assertSharedPins(`${pinned}
+  additional:
+    uses: "benhammoush/ci-cd-workflows/.github/workflows/verify-worker.yml@${config.automationSha}"
+    with:
+      automation_sha: main
+`),
+  );
+});
 
 void test('release entry points use the same immutable shared guards without an automatic production trigger', () => {
   for (const file of [workflow, production]) {
