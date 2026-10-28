@@ -107,8 +107,8 @@ a rate-limit binding, verified Firebase ID tokens and current account-status
 checks. Owner-scoped D1 constraints enforce uniqueness, capacity and deletion
 state; private data never enters market KV or shared caches. Automatic invocation
 URL logs are disabled to avoid exposing saved addresses. No hosted setup or
-feature activation is implied. See [the watchlist specification](spec/watchlists.md) for the
-contract, configuration, local test evidence and remaining lifecycle gates.
+feature activation is implied. See [the API contract](../openapi.yaml) for the
+private-watchlist routes and authentication requirements.
 
 ### Public data
 
@@ -193,12 +193,5 @@ fixtures without contacting providers; it is not a live-response cache.
 - `src/defillama.ts` - independently cached DeFi analytics.
 - `src/constants.ts` - cache keys, TTLs, page sizes, and supported limits.
 
-## Operator documentation
-
-The frontend repository owns the [environment and release runbook](https://github.com/benhammoush/iris-frontend/blob/main/docs/environments.md)
-and its dated [release evidence](https://github.com/benhammoush/iris-frontend/blob/main/docs/release-notes.md).
 This architecture is a source-level description, not a live inventory or proof
-of deployed configuration. The runbook's [old-infrastructure retirement
-section](https://github.com/benhammoush/iris-frontend/blob/main/docs/environments.md#old-infrastructure-retirement)
-tracks the separate provider/resource retirement work; this document does not
-authorize that work.
+of deployed configuration or authorization for provider/resource retirement.
