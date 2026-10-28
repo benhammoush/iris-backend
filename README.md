@@ -62,5 +62,4 @@ distinguish fresh, stale and unavailable results.
 See [the API specification](openapi.yaml) for routes, parameters, authentication
 requirements and response formats.
 
-See [the architecture](docs/architecture.md) and
-[private-watchlist specification](docs/spec/watchlists.md) for the system boundaries.
+See [the architecture](docs/architecture.md) for the system boundaries.
