@@ -29,6 +29,25 @@ const pr = readFileSync(
   'utf8',
 );
 
+void test('all shared workflow references and inputs match the configured immutable revision', () => {
+  assert.match(config.automationSha, /^[a-f0-9]{40}$/);
+  const audit = readFileSync(
+    new URL('../../.github/workflows/weekly-vuln-audit.yml', import.meta.url),
+    'utf8',
+  );
+  for (const file of [pr, workflow, production, audit]) {
+    const references = [
+      ...file.matchAll(/uses: benhammoush\/ci-cd-workflows\/[^\s@]+@([^\s]+)/g),
+    ];
+    assert.ok(references.length > 0);
+    for (const reference of references)
+      assert.equal(reference[1], config.automationSha);
+    const inputs = [...file.matchAll(/automation_sha:\s*([^\s]+)/g)];
+    if (file !== audit) assert.equal(inputs.length, references.length);
+    for (const input of inputs) assert.equal(input[1], config.automationSha);
+  }
+});
+
 void test('release entry points use the same immutable shared guards without an automatic production trigger', () => {
   for (const file of [workflow, production]) {
     assert.ok(file.includes(`verify-worker.yml@${config.automationSha}`));
