@@ -32,9 +32,25 @@ name = "iris-backend-dev"
 workers_dev = true
 preview_urls = false
 
+[env.dev.triggers]
+crons = ["17 * * * *"]
+
 [env.dev.vars]
 CORS_ORIGINS = "https://iris-frontend-dev.vercel.app,http://localhost:5173"
 RETAIN_STALE_MARKET_DATA = "true"
+WATCHLIST_ENABLED = "false"
+WATCHLIST_CLEANUP_ENABLED = "false"
+FIREBASE_PROJECT_ID = "iris-watchlists-dev"
+
+[[env.dev.d1_databases]]
+binding = "WATCHLIST_DB"
+database_name = "iris-watchlists-dev"
+database_id = "3e6a5cab-b33c-4e3f-ae01-9f3f222efa81"
+
+[[env.dev.ratelimits]]
+name = "WATCHLIST_RATE_LIMITER"
+namespace_id = "2026102901"
+simple = { limit = 60, period = 60 }
 
 [[env.dev.kv_namespaces]]
 binding = "SNAPSHOTS"

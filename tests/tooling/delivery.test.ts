@@ -125,11 +125,14 @@ void test('delivery preserves target-scoped credentials and refresh semantics wi
   );
 });
 
-void test('Worker targets retain local isolation and production-only hourly Cron', () => {
+void test('Worker targets retain local isolation and separate dev cleanup from production market Cron', () => {
   assert.doesNotMatch(configuration, /\[env\.staging(?:\]|\.)/);
   for (const target of ['local', 'e2e', 'dev', 'production'])
     assert.ok(configuration.includes(`[env.${target}]`));
-  assert.doesNotMatch(configuration, /\[env\.dev\.triggers\]/);
+  assert.match(
+    configuration,
+    /\[env\.dev\.triggers\]\s+crons = \["17 \* \* \* \*"\]/,
+  );
   assert.match(
     configuration,
     /\[env\.production\.triggers\]\s+crons = \["0 \* \* \* \*"\]/,
@@ -141,6 +144,36 @@ void test('Worker targets retain local isolation and production-only hourly Cron
     assert.ok(section?.includes('00000000000000000000000000000000'));
     assert.doesNotMatch(section, /remote\s*=\s*true/);
   }
+});
+
+void test('watchlist setup binds only isolated dev storage and leaves account traffic and cleanup disabled', () => {
+  const variables = configuration.split('[env.dev.vars]')[1]?.split(/^\[/m)[0];
+  assert.ok(variables);
+  assert.match(variables, /^WATCHLIST_ENABLED = "false"$/m);
+  assert.match(variables, /^WATCHLIST_CLEANUP_ENABLED = "false"$/m);
+  assert.match(variables, /^FIREBASE_PROJECT_ID = "iris-watchlists-dev"$/m);
+  const database = configuration
+    .split('[[env.dev.d1_databases]]')[1]
+    ?.split(/^\[/m)[0];
+  assert.ok(database);
+  assert.match(database, /^binding = "WATCHLIST_DB"$/m);
+  assert.match(database, /^database_name = "iris-watchlists-dev"$/m);
+  assert.match(
+    database,
+    /^database_id = "3e6a5cab-b33c-4e3f-ae01-9f3f222efa81"$/m,
+  );
+  assert.doesNotMatch(database, /^migrations_dir\s*=/m);
+  assert.equal((configuration.match(/\.d1_databases\]\]/g) ?? []).length, 1);
+  const limiter = configuration
+    .split('[[env.dev.ratelimits]]')[1]
+    ?.split(/^\[/m)[0];
+  assert.ok(limiter);
+  assert.match(limiter, /^name = "WATCHLIST_RATE_LIMITER"$/m);
+  assert.match(limiter, /^namespace_id = "2026102901"$/m);
+  assert.match(limiter, /^simple = \{ limit = 60, period = 60 \}$/m);
+  assert.equal((configuration.match(/\.ratelimits\]\]/g) ?? []).length, 1);
+  assert.doesNotMatch(configuration, /^FIREBASE_PRIVATE_KEY\s*=/m);
+  assert.doesNotMatch(configuration, /^WATCHLIST_RECEIPT_KEY\s*=/m);
 });
 
 void test('hosted Workers bind distinct new namespaces, not retired resources', () => {
