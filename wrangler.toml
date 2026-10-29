@@ -46,7 +46,6 @@ FIREBASE_PROJECT_ID = "iris-watchlists-dev"
 binding = "WATCHLIST_DB"
 database_name = "iris-watchlists-dev"
 database_id = "3e6a5cab-b33c-4e3f-ae01-9f3f222efa81"
-migrations_dir = "migrations"
 
 [[env.dev.ratelimits]]
 name = "WATCHLIST_RATE_LIMITER"

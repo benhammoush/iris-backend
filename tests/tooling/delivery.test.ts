@@ -162,7 +162,7 @@ void test('watchlist setup binds only isolated dev storage and leaves account tr
     database,
     /^database_id = "3e6a5cab-b33c-4e3f-ae01-9f3f222efa81"$/m,
   );
-  assert.match(database, /^migrations_dir = "migrations"$/m);
+  assert.doesNotMatch(database, /^migrations_dir\s*=/m);
   assert.equal((configuration.match(/\.d1_databases\]\]/g) ?? []).length, 1);
   const limiter = configuration
     .split('[[env.dev.ratelimits]]')[1]
