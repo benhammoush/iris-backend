@@ -151,7 +151,7 @@ void test('watchlist cleanup is enabled only in isolated dev while account traff
   assert.ok(variables);
   assert.match(variables, /^WATCHLIST_ENABLED = "false"$/m);
   assert.match(variables, /^WATCHLIST_CLEANUP_ENABLED = "true"$/m);
-  assert.match(variables, /^FIREBASE_PROJECT_ID = "iris-watchlists-dev"$/m);
+  assert.match(variables, /^FIREBASE_PROJECT_ID = "iris-watchlists-dev-v2"$/m);
   const database = configuration
     .split('[[env.dev.d1_databases]]')[1]
     ?.split(/^\[/m)[0];
