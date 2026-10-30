@@ -146,11 +146,11 @@ void test('Worker targets retain local isolation and separate dev cleanup from p
   }
 });
 
-void test('watchlist setup binds only isolated dev storage and leaves account traffic and cleanup disabled', () => {
+void test('watchlist cleanup is enabled only in isolated dev while account traffic stays disabled', () => {
   const variables = configuration.split('[env.dev.vars]')[1]?.split(/^\[/m)[0];
   assert.ok(variables);
   assert.match(variables, /^WATCHLIST_ENABLED = "false"$/m);
-  assert.match(variables, /^WATCHLIST_CLEANUP_ENABLED = "false"$/m);
+  assert.match(variables, /^WATCHLIST_CLEANUP_ENABLED = "true"$/m);
   assert.match(variables, /^FIREBASE_PROJECT_ID = "iris-watchlists-dev"$/m);
   const database = configuration
     .split('[[env.dev.d1_databases]]')[1]
@@ -174,6 +174,15 @@ void test('watchlist setup binds only isolated dev storage and leaves account tr
   assert.equal((configuration.match(/\.ratelimits\]\]/g) ?? []).length, 1);
   assert.doesNotMatch(configuration, /^FIREBASE_PRIVATE_KEY\s*=/m);
   assert.doesNotMatch(configuration, /^WATCHLIST_RECEIPT_KEY\s*=/m);
+  for (const target of ['local', 'e2e', 'production']) {
+    const variables = configuration
+      .split(`[env.${target}.vars]`)[1]
+      ?.split(/^\[/m)[0];
+    assert.doesNotMatch(
+      variables ?? '',
+      /^WATCHLIST_(?:CLEANUP_)?ENABLED = "true"$/m,
+    );
+  }
 });
 
 void test('hosted Workers bind distinct new namespaces, not retired resources', () => {
