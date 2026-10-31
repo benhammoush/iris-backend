@@ -146,10 +146,10 @@ void test('Worker targets retain local isolation and separate dev cleanup from p
   }
 });
 
-void test('watchlist cleanup is enabled only in isolated dev while account traffic stays disabled', () => {
+void test('watchlists and cleanup are enabled only in isolated dev', () => {
   const variables = configuration.split('[env.dev.vars]')[1]?.split(/^\[/m)[0];
   assert.ok(variables);
-  assert.match(variables, /^WATCHLIST_ENABLED = "false"$/m);
+  assert.match(variables, /^WATCHLIST_ENABLED = "true"$/m);
   assert.match(variables, /^WATCHLIST_CLEANUP_ENABLED = "true"$/m);
   assert.match(variables, /^FIREBASE_PROJECT_ID = "iris-watchlists-dev-v2"$/m);
   const database = configuration
