@@ -53,6 +53,7 @@
     "yaml": "^2.8.1"
   },
   "overrides": {
+    "minimatch@^10.2.2": "11.0.3",
     "miniflare": {
       "undici": "7.30.1"
     }
