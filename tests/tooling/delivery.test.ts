@@ -125,7 +125,7 @@ void test('delivery preserves target-scoped credentials and refresh semantics wi
   );
 });
 
-void test('Worker targets retain local isolation and separate dev cleanup from production market Cron', () => {
+void test('Worker targets retain local isolation and production market plus cleanup Crons', () => {
   assert.doesNotMatch(configuration, /\[env\.staging(?:\]|\.)/);
   for (const target of ['local', 'e2e', 'dev', 'production'])
     assert.ok(configuration.includes(`[env.${target}]`));
@@ -135,7 +135,7 @@ void test('Worker targets retain local isolation and separate dev cleanup from p
   );
   assert.match(
     configuration,
-    /\[env\.production\.triggers\]\s+crons = \["0 \* \* \* \*"\]/,
+    /\[env\.production\.triggers\]\s+crons = \["0 \* \* \* \*", "17 \* \* \* \*"\]/,
   );
   for (const target of ['local', 'e2e']) {
     const section = configuration
@@ -146,7 +146,7 @@ void test('Worker targets retain local isolation and separate dev cleanup from p
   }
 });
 
-void test('watchlists and cleanup are enabled only in isolated dev', () => {
+void test('dev watchlists retain their isolated resources and cleanup settings', () => {
   const variables = configuration.split('[env.dev.vars]')[1]?.split(/^\[/m)[0];
   assert.ok(variables);
   assert.match(variables, /^WATCHLIST_ENABLED = "true"$/m);
@@ -163,7 +163,7 @@ void test('watchlists and cleanup are enabled only in isolated dev', () => {
     /^database_id = "3e6a5cab-b33c-4e3f-ae01-9f3f222efa81"$/m,
   );
   assert.doesNotMatch(database, /^migrations_dir\s*=/m);
-  assert.equal((configuration.match(/\.d1_databases\]\]/g) ?? []).length, 1);
+  assert.equal((configuration.match(/\.d1_databases\]\]/g) ?? []).length, 2);
   const limiter = configuration
     .split('[[env.dev.ratelimits]]')[1]
     ?.split(/^\[/m)[0];
@@ -171,10 +171,10 @@ void test('watchlists and cleanup are enabled only in isolated dev', () => {
   assert.match(limiter, /^name = "WATCHLIST_RATE_LIMITER"$/m);
   assert.match(limiter, /^namespace_id = "2026102901"$/m);
   assert.match(limiter, /^simple = \{ limit = 60, period = 60 \}$/m);
-  assert.equal((configuration.match(/\.ratelimits\]\]/g) ?? []).length, 1);
+  assert.equal((configuration.match(/\.ratelimits\]\]/g) ?? []).length, 2);
   assert.doesNotMatch(configuration, /^FIREBASE_PRIVATE_KEY\s*=/m);
   assert.doesNotMatch(configuration, /^WATCHLIST_RECEIPT_KEY\s*=/m);
-  for (const target of ['local', 'e2e', 'production']) {
+  for (const target of ['local', 'e2e']) {
     const variables = configuration
       .split(`[env.${target}.vars]`)[1]
       ?.split(/^\[/m)[0];
@@ -183,6 +183,40 @@ void test('watchlists and cleanup are enabled only in isolated dev', () => {
       /^WATCHLIST_(?:CLEANUP_)?ENABLED = "true"$/m,
     );
   }
+});
+
+void test('production watchlists use separate Firebase, D1 and rate-limit identities', () => {
+  const variables = configuration
+    .split('[env.production.vars]')[1]
+    ?.split(/^\[/m)[0];
+  assert.ok(variables);
+  assert.match(variables, /^WATCHLIST_ENABLED = "true"$/m);
+  assert.match(variables, /^WATCHLIST_CLEANUP_ENABLED = "true"$/m);
+  assert.match(
+    variables,
+    /^FIREBASE_PROJECT_ID = "iris-watchlists-production"$/m,
+  );
+  const database = configuration
+    .split('[[env.production.d1_databases]]')[1]
+    ?.split(/^\[/m)[0];
+  assert.ok(database);
+  assert.match(database, /^binding = "WATCHLIST_DB"$/m);
+  assert.match(database, /^database_name = "iris-watchlists-production"$/m);
+  assert.match(
+    database,
+    /^database_id = "602546c6-2e26-432f-95b8-b7ec4ec662a1"$/m,
+  );
+  assert.doesNotMatch(database, /^migrations_dir\s*=/m);
+  const limiter = configuration
+    .split('[[env.production.ratelimits]]')[1]
+    ?.split(/^\[/m)[0];
+  assert.ok(limiter);
+  assert.match(limiter, /^name = "WATCHLIST_RATE_LIMITER"$/m);
+  assert.match(limiter, /^namespace_id = "2026110401"$/m);
+  assert.match(limiter, /^simple = \{ limit = 60, period = 60 \}$/m);
+  assert.doesNotMatch(variables, /dev|localhost/);
+  assert.doesNotMatch(database, /3e6a5cab-b33c-4e3f-ae01-9f3f222efa81/);
+  assert.doesNotMatch(limiter, /2026102901/);
 });
 
 void test('hosted Workers bind distinct new namespaces, not retired resources', () => {

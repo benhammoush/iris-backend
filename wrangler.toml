@@ -75,6 +75,19 @@ preview_urls = false
 
 [env.production.vars]
 CORS_ORIGINS = "https://iris-frontend-production.vercel.app"
+WATCHLIST_ENABLED = "true"
+WATCHLIST_CLEANUP_ENABLED = "true"
+FIREBASE_PROJECT_ID = "iris-watchlists-production"
+
+[[env.production.d1_databases]]
+binding = "WATCHLIST_DB"
+database_name = "iris-watchlists-production"
+database_id = "602546c6-2e26-432f-95b8-b7ec4ec662a1"
+
+[[env.production.ratelimits]]
+name = "WATCHLIST_RATE_LIMITER"
+namespace_id = "2026110401"
+simple = { limit = 60, period = 60 }
 
 [[env.production.kv_namespaces]]
 binding = "SNAPSHOTS"
@@ -82,4 +95,4 @@ binding = "SNAPSHOTS"
 id = "4442b6231710407ea3a668dc9a8a8794"
 
 [env.production.triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "17 * * * *"]

@@ -43,7 +43,7 @@ assert.ok(
 assert.ok(section.includes(`https://iris-frontend-${target}.vercel.app`));
 if (target === 'production') {
   assert.ok(!section.includes('localhost'));
-  assert.ok(section.includes('crons = ["0 * * * *"]'));
+  assert.ok(section.includes('crons = ["0 * * * *", "17 * * * *"]'));
 }
 const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'));
 const refresh =
