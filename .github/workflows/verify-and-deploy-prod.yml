@@ -24,7 +24,7 @@ jobs:
     name: Production delivery
     needs: verify_release
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
-    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@43018f3d7ec3605d14379be6f1f5de287ad6a1f1
+    uses: benhammoush/ci-cd-workflows/.github/workflows/deploy-worker.yml@c1ad9103aefc48c7694499aa1577e3266d7c6af8
     with:
       automation_sha: 43018f3d7ec3605d14379be6f1f5de287ad6a1f1
       source_sha: ${{ inputs.sha }}
