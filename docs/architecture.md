@@ -1,6 +1,6 @@
-# Iris System Organigram
+# Iris architecture
 
-This document describes the application data path between `iris-frontend` and `iris-backend`. The browser calls only the Worker. Provider credentials and direct provider requests remain inside Cloudflare Workers. Hosted resources must be provisioned and verified separately; this source snapshot does not establish a live deployment.
+This document describes the application data path between `iris-frontend` and `iris-backend`. The browser requests market and wallet data only through the Worker; optional account sign-in also contacts Firebase Auth directly. Market-provider credentials and privileged Firebase credentials remain inside Cloudflare Workers. Hosted resources must be provisioned and verified separately; this source snapshot does not establish a live deployment.
 
 ```mermaid
 flowchart TB
@@ -8,8 +8,8 @@ flowchart TB
 
   subgraph Frontend["Iris Public - React 18 / Vite / Vercel"]
     Bootstrap["src/index.tsx\nTheme restore + BrowserRouter"]
-    App["src/App.tsx\nThemeProvider\nCatalogProvider\nHeliusDashboardProvider"]
-    Router["Routes\n/ Home\n/assets Catalog\n/wallets Catalog\n/asset/:mint Asset\n/wallet/:address Wallet"]
+    App["src/App.tsx\nThemeProvider + AccountProvider\nCatalogProvider\nHeliusDashboardProvider"]
+    Router["Public dashboard + API reference\nOptional account and watchlist routes"]
     Views["Page components\nHome, Catalog, Asset, Wallet\nNavbar, DataStatus"]
     AssetView["Asset intelligence view\nJupiter metrics\nBirdeye candles\nHelius profile + mint history + largest accounts"]
     Contexts["Global resources\nCatalog: /v3/assets\nHelius dashboard: /v3/transactions/recent?limit=15\n60-second visible-tab polling"]
@@ -21,7 +21,7 @@ flowchart TB
 
   subgraph Edge["Cloudflare Worker - Iris API"]
     Entry["src/index.ts\nfetch + scheduled entrypoints"]
-    Security["CORS origin check\nOPTIONS preflight\nGET-only public API\nPOST /internal/refresh bearer token"]
+    Security["CORS origin check\nOPTIONS preflight\nPublic GET routes\nSeparate private and operator authorization"]
     Dispatcher["src/routes.ts\n/v3 route validation\nJSON envelopes\nprovenance + freshness metadata"]
     Scheduler["Hourly Cron\n0 * * * *"]
     Refresh["Refresh coordinators\nrefreshSnapshot\nrefreshHeliusDashboardSample\nrefreshDefiLlamaDashboard"]
@@ -39,6 +39,9 @@ flowchart TB
     Recent["src/recentTransactions.ts\nblock sample + Parsed Events"]
     Defi["src/defillama.ts\nSolana DEX + protocol dashboard"]
     Snap["src/snapshot.ts\nversioned core snapshot\ntracked-pool swaps"]
+    Private["src/watchlists.ts\nFirebase-authenticated watchlists\nAccount deletion + bounded receipts"]
+    D1["D1 private account state\nOwner-scoped saved references\nDurable deletion intent"]
+    Cleanup["src/accountDeletion.ts\nSeparate cleanup Cron: 17 * * * *\nExplicit cleanup enablement"]
   end
 
   subgraph Providers["External providers - Worker-only credentials"]
@@ -48,7 +51,10 @@ flowchart TB
     DefiLlama["DefiLlama\nSolana DEX volume + protocol TVL"]
   end
 
+  Firebase["Firebase Auth\nBrowser sign-in\nWorker identity checks and privileged cleanup"]
+
   User --> Bootstrap --> App --> Router --> Views
+  App -. optional sign-in .-> Firebase
   App --> Contexts --> Hook
   Views --> AssetView
   AssetView --> Hook
@@ -56,6 +62,12 @@ flowchart TB
   WorkerApi -. optional fallback .-> Fixtures
   Client -->|HTTPS /v3 JSON| Entry
   Entry --> Security --> Dispatcher
+  Security -->|/v3/me/*| Private
+  Private <--> D1
+  Private --> Firebase
+  Private --> Cleanup
+  Cleanup <--> D1
+  Cleanup --> Firebase
   Scheduler --> Refresh
   Refresh --> Snap
   Refresh --> Recent
@@ -89,17 +101,17 @@ flowchart TB
 | `Asset` chart              | `/v3/assets/mint/:mint/candles?timeframe=<native>`                                                      | USD OHLCV and volume                                                                                                | Birdeye                                 |
 | `Asset` backward chart pan | Same candle route with `before=<unix-seconds>`                                                          | Earlier fixed 300-candle page                                                                                       | Birdeye                                 |
 | `Asset` protocol panel     | `/v3/assets/mint/:mint/onchain`                                                                         | Token program, supply, authorities, mutability, extensions                                                          | Helius                                  |
-| `Asset` intelligence panel | `/v3/assets/mint/:mint/transactions?limit=25`, `/distribution`                                          | Mint-address history and 20 largest token accounts, not a complete token-wide transfer ledger or unique-holder list | Helius                                  |
+| `Asset` intelligence panel | `/v3/assets/mint/:mint/transactions?limit=50`, `/distribution`                                          | Mint-address history and 20 largest token accounts, not a complete token-wide transfer ledger or unique-holder list | Helius                                  |
 | `Wallet`                   | `/v3/wallets/:address`                                                                                  | Native/SPL/Token-2022 balances and priced subtotal                                                                  | Helius with optional Jupiter enrichment |
 | `Wallet` activity          | `/v3/wallets/:address/transactions?limit=25&cursor=...`                                                 | Decoded public wallet events                                                                                        | Helius Parsed Events                    |
 
 ## API Contract And Compatibility
 
-`/v3` is the canonical public API contract and is described completely in `openapi.yaml`. `/v1` and `/v2` remain operational but deprecated compatibility surfaces. The Worker package version, runtime API version, and OpenAPI `info.version` are kept identical and validated in CI. Public routes accept `GET`; `OPTIONS` supports browser preflight, and the operator-only `POST /internal/refresh` endpoint requires its separate refresh bearer token.
+`/v3` is the canonical API contract and is described in `openapi.yaml`. `/v1` and `/v2` remain operational but deprecated compatibility surfaces. The Worker package version, runtime API version, and OpenAPI `info.version` are kept identical and validated in CI. Public market and wallet routes accept `GET`; `OPTIONS` supports browser preflight. Private `/v3/me/*` routes have separate method and authorization checks. The operator-only `POST /internal/refresh` endpoint requires its separate refresh bearer token.
 
 ## Worker Route, Cache, And Failure Flow
 
-### Private watchlists
+### Private watchlists and account deletion
 
 `/v3/me/watchlist` and its item PUT/DELETE routes are separate from public
 market/wallet reads and operator refresh. They require explicit enablement, D1,
@@ -109,6 +121,16 @@ state; private data never enters market KV or shared caches. Automatic invocatio
 URL logs are disabled to avoid exposing saved addresses. No hosted setup or
 feature activation is implied. See [the API contract](../openapi.yaml) for the
 private-watchlist routes and authentication requirements.
+
+`GET /v3/me/watchlist` reads saved references; item routes accept `PUT` and
+`DELETE`. `DELETE /v3/me/account` requires a recently authenticated, current
+Firebase identity and explicit deletion confirmation to begin deletion. It purges
+saved references and commits durable cleanup intent before reporting acceptance;
+acceptance does not claim Firebase deletion has completed. A short-lived deletion
+receipt can only repeat an accepted deletion or read its status through
+`GET /v3/me/account/deletion`; it cannot start a new deletion or extend expiry.
+The separate `17 * * * *` cleanup schedule processes pending account cleanup only
+when explicitly enabled. Private responses use `Cache-Control: no-store`.
 
 ### Public data
 
@@ -150,7 +172,7 @@ fixtures without contacting providers; it is not a live-response cache.
 
 ## Scheduled Snapshot Flow
 
-1. Cloudflare Cron runs hourly, or CI calls authenticated `POST /internal/refresh` after deployment.
+1. Where configured, the market Cron runs hourly, or delivery automation calls authenticated `POST /internal/refresh`. The separate account-cleanup Cron does not refresh market data.
 2. `refreshSnapshot()` fetches Helius network metrics and configured reviewed-pool activity, then fetches the Jupiter market catalog and discovery lists.
 3. The Worker writes a complete `snapshot:v2:<timestamp>` record to KV.
 4. Only after the versioned snapshot write succeeds, the Worker updates `snapshot:current`. Production versioned snapshots and DefiLlama dashboard records expire after 24 hours. Dev sets `RETAIN_STALE_MARKET_DATA=true`: these records have no storage expiry and remain readable past 24 hours, still labelled stale with their original timestamps. Dev retains versioned snapshot records without automatic pruning. Wallet balances and Birdeye charts are fetched on demand, not stored in KV or browser/CDN caches; other cache limits are unchanged.
@@ -159,14 +181,16 @@ fixtures without contacting providers; it is not a live-response cache.
 
 ## Security Boundaries
 
-| Boundary                 | Responsibility                                                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser                  | Holds only public `VITE_API_BASE`; never receives provider credentials or requests wallet signatures.                                       |
-| Frontend client          | Adds a request ID, applies a 10-second timeout, validates the Worker envelope, and turns failures into displayable `ApiError` values.       |
-| Cloudflare Worker        | Enforces allowed CORS origins, validates public request parameters, owns provider secrets, and prevents direct browser-to-provider traffic. |
-| `POST /internal/refresh` | Requires `Authorization: Bearer <REFRESH_TOKEN>` and is not a public refresh endpoint.                                                      |
-| Providers                | Receive requests only from the Worker using Worker-managed Helius, Jupiter, and Birdeye credentials.                                        |
-| KV                       | Stores public market and public-chain cache data; no wallet keys, signatures, or user secrets are written.                                  |
+| Boundary                 | Responsibility                                                                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser                  | Holds public build configuration and, when accounts are enabled, Firebase user authentication state; never receives provider/admin credentials or requests wallet signatures. |
+| Frontend client          | Adds a request ID, applies a 10-second timeout, validates the Worker envelope, and turns failures into displayable `ApiError` values.                                         |
+| Cloudflare Worker        | Enforces allowed CORS origins, validates public request parameters, owns provider secrets, and prevents direct browser-to-provider traffic.                                   |
+| `POST /internal/refresh` | Requires `Authorization: Bearer <REFRESH_TOKEN>` and is not a public refresh endpoint.                                                                                        |
+| `/v3/me/*`               | Enforces feature gates, private rate limits, owner-scoped access and route-specific Firebase or deletion-receipt authorization; private data is never shared-cacheable.       |
+| D1 and Firebase Auth     | D1 owns private saved references and durable deletion state; Firebase owns user identities. Privileged cleanup credentials remain Worker-only.                                |
+| Providers                | Receive requests only from the Worker using Worker-managed Helius, Jupiter, and Birdeye credentials.                                                                          |
+| KV                       | Stores public market and public-chain cache data; no wallet keys, signatures, or user secrets are written.                                                                    |
 
 ## Source Files
 
@@ -192,6 +216,10 @@ fixtures without contacting providers; it is not a live-response cache.
 - `src/network.ts` - Helius network-metric calculation.
 - `src/defillama.ts` - independently cached DeFi analytics.
 - `src/constants.ts` - cache keys, TTLs, page sizes, and supported limits.
+- `src/watchlists.ts` - private route dispatch and owner-scoped saved references.
+- `src/firebaseAuth.ts` - Firebase token validation and current identity checks.
+- `src/accountDeletion.ts` - durable account-deletion lifecycle, receipts and cleanup.
+- `src/privateRateLimit.ts` - rate limiting for private requests.
 
 This architecture is a source-level description, not a live inventory or proof
 of deployed configuration or authorization for provider/resource retirement.

@@ -1,7 +1,0 @@
-{
-  "repository": "benhammoush/iris-backend",
-  "base": "main",
-  "workflow": "verify-pr.yml",
-  "jobs": ["Verify"],
-  "mode": "manual"
-}

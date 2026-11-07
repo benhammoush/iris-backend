@@ -8,12 +8,6 @@ import { ESLint } from 'eslint';
 import { check, resolveConfig } from 'prettier';
 import { readdir } from 'node:fs/promises';
 
-// The existing Node-only policy suite moved from scripts; other Worker tests stay TypeScript-only.
-const nodePolicyTest = new URL(
-  '../tests/tooling/merge-gate.test.mjs',
-  import.meta.url,
-).href;
-
 /** Reject handwritten application JavaScript outside the explicitly permitted tooling surfaces.
  * @param directory - Source or test directory URL to inspect recursively.
  */
@@ -26,8 +20,7 @@ async function assertTypeScriptOnly(directory) {
     if (entry.isDirectory()) await assertTypeScriptOnly(path);
     else
       assert.ok(
-        !/\.(?:js|jsx|mjs|cjs)$/.test(entry.name) ||
-          path.href === nodePolicyTest,
+        !/\.(?:js|jsx|mjs|cjs)$/.test(entry.name),
         `Application JavaScript is not allowed: ${path.pathname}`,
       );
   }
