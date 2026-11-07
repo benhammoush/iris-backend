@@ -24,7 +24,6 @@ void test('check owns every CI quality stage exactly once and ends in a dry-run 
     'npm run typecheck',
     'npm run lint:openapi',
     'npm test',
-    'npm run test:merge-policy',
     'npm run build',
   ]);
   assert.equal(scripts.build, 'wrangler deploy --dry-run --env production');
